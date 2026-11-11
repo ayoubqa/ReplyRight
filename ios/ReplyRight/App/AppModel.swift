@@ -16,7 +16,6 @@ enum HomeRoute: Hashable {
     /// Rework a draft the user already wrote.
     case polish
     case starter(StarterKind)
-    case session(UUID)
 }
 
 enum StarterKind: Hashable {
@@ -92,6 +91,8 @@ final class AppModel {
     let store: SharedStore
     let api: APIClient
     let purchases: StoreService
+    /// The conversation currently being worked on. One at a time, shared so any tab can start a flow.
+    let compose = ComposeModel()
 
     // Things the user owns. Each change is written straight to the device.
     var settings: AppSettings {
@@ -322,6 +323,37 @@ final class AppModel {
     func dismissInbox() {
         store.clearInbox()
         inbox = nil
+    }
+
+    // MARK: Starting a flow
+
+    /// Opens the conversation screen on the Home tab, optionally with the goal already chosen.
+    func startCompose(intent: Intent? = nil) {
+        compose.reset()
+        if let intent {
+            compose.intent = intent
+            compose.intentWasChosen = true
+        }
+        selectedTab = .home
+        homePath = [.input]
+    }
+
+    /// Continues with something the user shared to ReplyRight from another app.
+    func openInbox() {
+        guard let item = inbox else { return }
+        compose.reset()
+        compose.text = item.text
+        compose.addPrepared(store.inboxImages(for: item))
+        dismissInbox()
+        selectedTab = .home
+        homePath = [.input]
+    }
+
+    /// Reopens a saved session so new replies can be written for it.
+    func reopen(_ session: SavedSession) {
+        compose.load(session: session, person: person(session.crushID))
+        selectedTab = .home
+        homePath = [.replies]
     }
 
     // MARK: Coach
