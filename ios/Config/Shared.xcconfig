@@ -1,0 +1,20 @@
+// Settings shared by the app, the keyboard extension and the share extension.
+// Change the identifiers here, in one place, when you set up your own Apple Developer team.
+
+// Reverse-DNS prefix for every bundle identifier:
+//   app       $(RR_BUNDLE_ID_PREFIX).app
+//   keyboard  $(RR_BUNDLE_ID_PREFIX).app.keyboard
+//   share     $(RR_BUNDLE_ID_PREFIX).app.share
+RR_BUNDLE_ID_PREFIX = com.replyright
+
+// App Group shared by the three targets. Register it in your developer account.
+RR_APP_GROUP = group.$(RR_BUNDLE_ID_PREFIX).shared
+
+// Keychain group shared by the three targets (the team prefix is filled in at signing time).
+RR_KEYCHAIN_GROUP = $(AppIdentifierPrefix)$(RR_BUNDLE_ID_PREFIX).shared
+
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
+// Your Apple Developer Team ID. Leave empty to build for the simulator only.
+DEVELOPMENT_TEAM =

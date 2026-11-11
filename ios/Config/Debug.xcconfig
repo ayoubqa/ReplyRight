@@ -1,0 +1,7 @@
+#include "Shared.xcconfig"
+
+// Debug builds talk to the backend running on your Mac (`npm run dev` in backend/).
+// On a real iPhone, use your Mac's network name, for example: my-mac.local:3000
+// (or change it at runtime under You > Developer).
+RR_API_SCHEME = http
+RR_API_HOST = localhost:3000

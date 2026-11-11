@@ -1,0 +1,82 @@
+{
+  "identifier" : "5E2A9C41",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21571001",
+      "localizations" : [
+
+      ],
+      "name" : "ReplyRight Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "39.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6739100001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Everything ReplyRight can do, billed yearly.",
+              "displayName" : "ReplyRight Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.replyright.pro.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Yearly",
+          "subscriptionGroupID" : "21571001",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "6.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6739100002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Everything ReplyRight can do, billed monthly.",
+              "displayName" : "ReplyRight Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.replyright.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "21571001",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

@@ -1,0 +1,5 @@
+#include "Shared.xcconfig"
+
+// Release builds talk to your deployed backend over HTTPS. Replace with your domain.
+RR_API_SCHEME = https
+RR_API_HOST = api.replyright.app
