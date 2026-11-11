@@ -88,14 +88,12 @@ public enum Microcopy {
 /// This only runs when the user has turned on "Learn from my edits", and the
 /// result is added to My Voice where they can see and delete it.
 public enum VoiceLearning {
+    /// Returns the edited text when it is worth keeping, otherwise nil.
+    /// Any real change counts, including casing or punctuation: those are exactly how people differ.
     public static func candidate(original: String, edited: String) -> String? {
         let text = edited.trimmed
         guard text.count >= 12, text.count <= VoiceProfile.maxSampleLength else { return nil }
-        guard normalized(text) != normalized(original) || text != original.trimmed else { return nil }
+        guard text != original.trimmed else { return nil }
         return text
-    }
-
-    private static func normalized(_ text: String) -> String {
-        text.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 }

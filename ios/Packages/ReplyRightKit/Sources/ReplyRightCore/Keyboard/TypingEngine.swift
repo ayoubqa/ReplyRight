@@ -49,10 +49,10 @@ public struct TypingEngine: Equatable, Sendable {
 
     /// How a letter key should be shown and typed right now.
     public func rendered(_ character: String) -> String {
-        guard page == .letters, isUppercase else { return character }
-        // Single letters only: "ß" would otherwise become "SS".
+        // Single letters only: ".com" stays as it is, and "ß" must not become "SS".
+        guard page == .letters, isUppercase, character.count == 1 else { return character }
         let upper = character.uppercased()
-        return upper.count == character.count ? upper : character
+        return upper.count == 1 ? upper : character
     }
 
     /// Handles a key tap. `before` is the text before the cursor, `now` a monotonic timestamp.

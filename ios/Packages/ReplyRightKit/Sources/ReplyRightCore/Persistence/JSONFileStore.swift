@@ -7,7 +7,9 @@ public enum AppGroup {
     /// The container shared by the app and its extensions, or nil when the App
     /// Group is not available (missing entitlement, unit tests, other platforms).
     public static var sharedContainerURL: URL? {
-        #if canImport(Darwin)
+        // On macOS the same call returns a real folder even for an unsigned test process,
+        // so the shared container is only used on iOS.
+        #if os(iOS)
         return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
         #else
         return nil

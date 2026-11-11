@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+import ImageIO
 import ReplyRightCore
 import SwiftUI
 import UIKit
@@ -432,9 +433,20 @@ public struct RRField: View {
 public enum ScreenshotPreparer {
     public static let maxEdge: CGFloat = 2000
 
+    /// Downsamples straight from the encoded data, so a large photo is never decoded at full size.
+    /// That matters in the share extension, which runs under a tight memory limit.
     public static func prepare(_ data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        return prepare(image)
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxEdge),
+        ]
+        guard let downsampled = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return prepare(UIImage(cgImage: downsampled))
     }
 
     public static func prepare(_ image: UIImage) -> Data? {
