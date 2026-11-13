@@ -1,17 +1,22 @@
 #if canImport(UIKit)
+import CoreText
 import ReplyRightCore
 import SwiftUI
 import UIKit
 
-// ReplyRight's design system, "After Hours".
+// ReplyRight's design system, "Low Light".
 //
-// The app is set in the evening, when most of this texting happens: deep ink
-// and midnight plum, warm ivory type, a quiet lavender and a muted coral used
-// sparingly for emphasis. Display type is the system serif (New York) for an
-// editorial feel; everything functional is SF Pro.
+// A quiet corner, late in the evening, with a friend who is good with words.
 //
-// Colours come from `Palette` in ReplyRightCore, so the UIKit keyboard draws
-// from the same tokens.
+//   Ground     deep bottle green; blush-tinted paper in daylight
+//   Voice      blush: quotation marks, messages you might send, the main action
+//   Pencil     highlighter yellow: the cursor, and the one thing worth noticing
+//   Type       Young Serif for the few lines that set the tone, SF for everything you use
+//   Layout     one left-aligned column on the ground. Rules and space separate
+//              things; only messages get bubbles and only the main action gets a fill
+//
+// There are no cards, gradients or glows. Colours come from `Palette` in
+// ReplyRightCore, so the UIKit keyboard draws from the same tokens.
 
 extension Color {
     /// A colour that follows the current appearance.
@@ -31,14 +36,24 @@ extension Color {
     public static let rrTextSecondary = Color(Palette.textSecondary)
     public static let rrTextTertiary = Color(Palette.textTertiary)
 
+    /// The voice: blush after dark, raspberry in daylight.
     public static let rrAccent = Color(Palette.accent)
     public static let rrAccentSoft = Color(Palette.accentSoft)
+    /// The pencil, as a fill: a highlighter mark behind or beside something.
+    public static let rrHighlight = Color(Palette.highlight)
+    /// The pencil, as ink: readable on the ground in both appearances.
+    public static let rrHighlightInk = Color(Palette.highlightInk)
+    public static let rrHighlightSoft = Color(Palette.highlightSoft)
+    /// The text cursor of the mark.
+    public static let rrCursor = Color(Palette.cursor)
+    /// Older name for `rrHighlightInk`.
     public static let rrCoral = Color(Palette.coral)
     public static let rrCoralSoft = Color(Palette.coralSoft)
 
     public static let rrButtonFill = Color(Palette.buttonFill)
     public static let rrButtonText = Color(Palette.buttonText)
 
+    public static let rrBubbleMine = Color(Palette.bubbleMine)
     public static let rrBubbleMineText = Color(Palette.bubbleMineText)
     public static let rrBubbleTheirs = Color(Palette.bubbleTheirs)
     public static let rrBubbleTheirsText = Color(Palette.bubbleTheirsText)
@@ -52,13 +67,10 @@ extension Color {
 }
 
 extension LinearGradient {
-    /// The fill of a message the user might send.
+    /// The fill of a message the user might send. A single solid colour; kept
+    /// as a gradient type so existing call sites keep working.
     public static var rrBubbleMine: LinearGradient {
-        LinearGradient(
-            colors: [Color(Palette.bubbleMineStart), Color(Palette.bubbleMineEnd)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        LinearGradient(colors: [Color.rrBubbleMine, Color.rrBubbleMine], startPoint: .top, endPoint: .bottom)
     }
 }
 
@@ -69,33 +81,77 @@ public enum RRSpace {
     public static let s: CGFloat = 12
     public static let m: CGFloat = 16
     public static let l: CGFloat = 24
-    public static let xl: CGFloat = 32
-    public static let xxl: CGFloat = 48
+    public static let xl: CGFloat = 36
+    public static let xxl: CGFloat = 56
     /// Standard horizontal margin for screens.
-    public static let screen: CGFloat = 20
+    public static let screen: CGFloat = 22
 }
 
+/// Corner radii. Shape follows meaning: bubbles are for messages, pills for
+/// actions, and the soft rectangle for the few surfaces you write on.
 public enum RRRadius {
-    public static let small: CGFloat = 12
-    public static let control: CGFloat = 18
+    public static let small: CGFloat = 10
+    public static let control: CGFloat = 16
     public static let bubble: CGFloat = 22
-    public static let card: CGFloat = 26
+    public static let card: CGFloat = 20
 }
 
 /// Motion: quick springs for touch, slower ones for content arriving.
 extension Animation {
-    public static var rrSnappy: Animation { .spring(response: 0.3, dampingFraction: 0.8) }
-    public static var rrGentle: Animation { .spring(response: 0.5, dampingFraction: 0.86) }
+    public static var rrSnappy: Animation { .spring(response: 0.28, dampingFraction: 0.82) }
+    public static var rrGentle: Animation { .spring(response: 0.5, dampingFraction: 0.88) }
+}
+
+// MARK: - Typefaces
+
+/// The display typeface, Young Serif, ships inside this package and is
+/// registered the first time it is needed. If registration ever fails the
+/// system serif is used instead, so nothing depends on it being there.
+public enum RRFonts {
+    public static let displayFontName = "YoungSerif-Regular"
+
+    /// True once the display face is available to SwiftUI and UIKit.
+    public static let hasDisplayFace: Bool = {
+        if UIFont(name: displayFontName, size: 12) != nil {
+            return true
+        }
+        guard let url = Bundle.module.url(forResource: displayFontName, withExtension: "ttf") else {
+            return false
+        }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        return UIFont(name: displayFontName, size: 12) != nil
+    }()
+
+    /// The display face at an exact size. Callers scale the size for Dynamic Type.
+    public static func display(size: CGFloat) -> Font {
+        hasDisplayFace
+            ? Font.custom(displayFontName, fixedSize: size)
+            : Font.system(size: size, weight: .semibold, design: .serif)
+    }
+
+    /// The display face for UIKit views such as the keyboard.
+    public static func displayUIFont(size: CGFloat) -> UIFont {
+        if hasDisplayFace, let font = UIFont(name: displayFontName, size: size) {
+            return font
+        }
+        let base = UIFont.systemFont(ofSize: size, weight: .semibold)
+        if let descriptor = base.fontDescriptor.withDesign(.serif) {
+            return UIFont(descriptor: descriptor, size: size)
+        }
+        return base
+    }
 }
 
 // MARK: - Typography
 
 public enum RRTextStyle {
-    /// The largest serif, for a screen's one big line.
+    /// The largest display line, for a screen's one big sentence.
     case hero
     case display
     case title
     case titleSmall
+    /// A row in a list of things you can do, set in the display face like a line on a menu.
+    case menu
     case headline
     case bodyLarge
     case body
@@ -104,17 +160,18 @@ public enum RRTextStyle {
     case callout
     case footnote
     case caption
-    /// Small tracked capitals above a section.
+    /// A quiet label above a group. Sentence case, never capitals.
     case eyebrow
-    /// Serif italic, used for the "why it works" margin notes.
+    /// The reason behind a suggestion.
     case note
 
     var size: CGFloat {
         switch self {
-        case .hero: return 40
-        case .display: return 32
-        case .title: return 26
-        case .titleSmall: return 21
+        case .hero: return 37
+        case .display: return 30
+        case .title: return 25
+        case .titleSmall: return 20
+        case .menu: return 21
         case .headline: return 17
         case .bodyLarge: return 18
         case .body: return 16
@@ -122,7 +179,7 @@ public enum RRTextStyle {
         case .callout: return 15
         case .footnote: return 13
         case .caption: return 12
-        case .eyebrow: return 11
+        case .eyebrow: return 13
         case .note: return 15
         }
     }
@@ -130,15 +187,16 @@ public enum RRTextStyle {
     var weight: Font.Weight {
         switch self {
         case .headline: return .semibold
-        case .eyebrow: return .semibold
+        case .eyebrow: return .medium
         default: return .regular
         }
     }
 
-    var design: Font.Design {
+    /// True for the styles set in the display face.
+    var isDisplay: Bool {
         switch self {
-        case .hero, .display, .title, .titleSmall, .note: return .serif
-        default: return .default
+        case .hero, .display, .title, .titleSmall, .menu: return true
+        default: return false
         }
     }
 
@@ -146,35 +204,31 @@ public enum RRTextStyle {
         switch self {
         case .hero, .display: return .largeTitle
         case .title: return .title
-        case .titleSmall: return .title3
+        case .titleSmall, .menu: return .title3
         case .headline: return .headline
         case .bodyLarge, .body, .message: return .body
         case .callout, .note: return .callout
-        case .footnote: return .footnote
-        case .caption, .eyebrow: return .caption
+        case .footnote, .eyebrow: return .footnote
+        case .caption: return .caption
         }
     }
 
     var tracking: CGFloat {
         switch self {
-        case .hero: return -0.8
-        case .display: return -0.5
-        case .title: return -0.3
-        case .eyebrow: return 1.6
+        case .hero: return -0.6
+        case .display: return -0.4
+        case .title: return -0.2
         default: return 0
         }
     }
 
     var lineSpacing: CGFloat {
         switch self {
-        case .hero, .display, .title, .titleSmall: return 0
+        case .hero, .display, .title, .titleSmall, .menu: return 1
         case .eyebrow, .caption: return 1
-        default: return 3
+        default: return 3.5
         }
     }
-
-    var isItalic: Bool { self == .note }
-    var isUppercase: Bool { self == .eyebrow }
 }
 
 struct RRTextModifier: ViewModifier {
@@ -190,13 +244,13 @@ struct RRTextModifier: ViewModifier {
         content
             .font(font)
             .tracking(style.tracking)
-            .textCase(style.isUppercase ? .uppercase : nil)
             .lineSpacing(style.lineSpacing)
     }
 
     private var font: Font {
-        let base = Font.system(size: size, weight: style.weight, design: style.design)
-        return style.isItalic ? base.italic() : base
+        style.isDisplay
+            ? RRFonts.display(size: size)
+            : Font.system(size: size, weight: style.weight, design: .default)
     }
 }
 
@@ -207,41 +261,34 @@ extension View {
     }
 }
 
-/// A serif headline with one phrase set in coral italics, the way a magazine
-/// would stress a word: "What's happening with *your crush?*"
+/// A screen's headline in the display face.
+///
+/// The three parts are joined and set as one even line. Nothing is picked out
+/// in another colour: the typeface carries the emphasis.
 public struct EditorialTitle: View {
-    private let lead: String
-    private let emphasis: String
-    private let trail: String
+    private let text: String
     private let style: RRTextStyle
 
     public init(_ lead: String, emphasis: String, trail: String = "", style: RRTextStyle = .display) {
-        self.lead = lead
-        self.emphasis = emphasis
-        self.trail = trail
+        self.text = lead + emphasis + trail
+        self.style = style
+    }
+
+    public init(_ text: String, style: RRTextStyle = .display) {
+        self.text = text
         self.style = style
     }
 
     public var body: some View {
-        Text(attributed)
+        Text(text)
             .rrText(style)
             .foregroundStyle(Color.rrText)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
     }
-
-    private var attributed: AttributedString {
-        var result = AttributedString(lead)
-        var stressed = AttributedString(emphasis)
-        stressed.inlinePresentationIntent = .emphasized
-        stressed.swiftUI.foregroundColor = Color.rrCoral
-        result.append(stressed)
-        result.append(AttributedString(trail))
-        return result
-    }
 }
 
-/// Small tracked capitals that label a section, with a short coral rule.
+/// A quiet label above a group of related things.
 public struct Eyebrow: View {
     private let title: String
 
@@ -250,16 +297,27 @@ public struct Eyebrow: View {
     }
 
     public var body: some View {
-        HStack(spacing: RRSpace.xs) {
-            Capsule()
-                .fill(Color.rrCoral)
-                .frame(width: 14, height: 2)
-            Text(title)
-                .rrText(.eyebrow)
-                .foregroundStyle(Color.rrTextSecondary)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+        Text(title)
+            .rrText(.eyebrow)
+            .foregroundStyle(Color.rrTextSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A hairline that separates one thing from the next.
+public struct Rule: View {
+    private let strong: Bool
+
+    public init(strong: Bool = false) {
+        self.strong = strong
+    }
+
+    public var body: some View {
+        Rectangle()
+            .fill(strong ? Color.rrLineStrong : Color.rrLine)
+            .frame(height: 1)
+            .accessibilityHidden(true)
     }
 }
 #endif

@@ -16,6 +16,7 @@ public final class SharedStore: @unchecked Sendable {
         static let savedReplies = "saved-replies.json"
         static let sessions = "sessions.json"
         static let people = "people.json"
+        static let peopleFolder = "people"
         static let styles = "styles.json"
         static let settings = "settings.json"
         static let keyboardContext = "keyboard-context.json"
@@ -70,6 +71,67 @@ public final class SharedStore: @unchecked Sendable {
     @discardableResult
     public func savePeople(_ people: [CrushProfile]) -> Bool {
         files.write(people, name: File.people)
+    }
+
+    // MARK: Profiles
+
+    private func photoName(for id: UUID) -> String {
+        "\(File.peopleFolder)/\(id.uuidString.lowercased()).jpg"
+    }
+
+    /// The photo the user picked for a profile, as JPEG data.
+    public func loadPersonPhoto(_ id: UUID) -> Data? {
+        files.readData(name: photoName(for: id))
+    }
+
+    @discardableResult
+    public func savePersonPhoto(_ data: Data, for id: UUID) -> Bool {
+        files.writeData(data, name: photoName(for: id))
+    }
+
+    public func deletePersonPhoto(_ id: UUID) {
+        files.delete(name: photoName(for: id))
+    }
+
+    /// Everything stored about one person, as pretty-printed JSON the user can keep.
+    public func exportPerson(_ id: UUID) -> Data? {
+        guard let profile = loadPeople().first(where: { $0.id == id }) else { return nil }
+        let export = ProfileExport(
+            profile: profile,
+            savedReplies: loadSavedReplies().filter { $0.crushID == id },
+            conversations: loadSessions().filter { $0.crushID == id },
+            photoJPEGBase64: loadPersonPhoto(id)?.base64EncodedString()
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(export)
+    }
+
+    /// Permanently removes a profile and everything attached to it: the photo,
+    /// the replies and conversations saved for that person, and any context
+    /// about them that was handed to the keyboard.
+    public func deletePerson(_ id: UUID) {
+        savePeople(loadPeople().filter { $0.id != id })
+        deletePersonPhoto(id)
+        saveSavedReplies(loadSavedReplies().filter { $0.crushID != id })
+        saveSessions(loadSessions().filter { $0.crushID != id })
+        if let context = files.read(KeyboardContext.self, name: File.keyboardContext), context.crushID == id {
+            clearKeyboardContext()
+        }
+        var settings = loadSettings()
+        var changed = false
+        if settings.lastCrushID == id {
+            settings.lastCrushID = nil
+            changed = true
+        }
+        if settings.keyboardCrushID == id {
+            settings.keyboardCrushID = nil
+            changed = true
+        }
+        if changed {
+            saveSettings(settings)
+        }
     }
 
     public func loadStyles() -> [FavouriteStyle] {
@@ -213,6 +275,7 @@ public final class SharedStore: @unchecked Sendable {
             files.delete(name: File.sessions)
         case .people:
             files.delete(name: File.people)
+            files.delete(name: File.peopleFolder)
         case .voice:
             files.delete(name: File.voice)
         case .styles:

@@ -19,6 +19,21 @@ public enum Tone: String, Codable, CaseIterable, Identifiable, Hashable, Sendabl
         case .charming: return "Charming"
         case .subtle: return "Low-key"
         case .warm: return "Warm"
+        case .moreDirect: return "More direct"
+        case .askQuestion: return "Ask a question"
+        case .keepGoing: return "Keep it going"
+        }
+    }
+
+    /// The label on a tweak control, phrased as a change to the reply.
+    public var tweakTitle: String {
+        switch self {
+        case .playful: return "More playful"
+        case .flirty: return "Flirtier"
+        case .charming: return "More charming"
+        case .warm: return "Warmer"
+        case .subtle: return "More low-key"
+        default: return title
         }
     }
 
@@ -50,6 +65,9 @@ public enum RefineAction: String, Codable, CaseIterable, Identifiable, Hashable,
     case charming
     case subtle
     case warm
+    case moreDirect = "more_direct"
+    case askQuestion = "ask_question"
+    case keepGoing = "keep_going"
 
     public var id: String { rawValue }
 
@@ -67,6 +85,21 @@ public enum RefineAction: String, Codable, CaseIterable, Identifiable, Hashable,
         case .charming: return "Charming"
         case .subtle: return "Low-key"
         case .warm: return "Warm"
+        case .moreDirect: return "More direct"
+        case .askQuestion: return "Ask a question"
+        case .keepGoing: return "Keep it going"
+        }
+    }
+
+    /// The label on a tweak control, phrased as a change to the reply.
+    public var tweakTitle: String {
+        switch self {
+        case .playful: return "More playful"
+        case .flirty: return "Flirtier"
+        case .charming: return "More charming"
+        case .warm: return "Warmer"
+        case .subtle: return "More low-key"
+        default: return title
         }
     }
 
@@ -84,12 +117,21 @@ public enum RefineAction: String, Codable, CaseIterable, Identifiable, Hashable,
         case .charming: return "wand.and.stars"
         case .subtle: return "moon"
         case .warm: return "sun.max"
+        case .moreDirect: return "arrow.right"
+        case .askQuestion: return "questionmark"
+        case .keepGoing: return "arrow.turn.down.right"
         }
     }
 
-    /// Tweaks offered on a reply card.
+    /// Tweaks offered on a reply, in the order they are shown.
     public static let cardActions: [RefineAction] = [
-        .moreLikeMe, .shorter, .funnier, .moreConfident, .lessIntense, .moreRomantic, .moreNatural,
+        .moreNatural, .playful, .moreConfident, .moreRomantic, .lessIntense, .shorter, .moreDirect, .askQuestion, .keepGoing,
+        .moreLikeMe,
+    ]
+
+    /// The handful of tweaks that fit in the keyboard.
+    public static let keyboardActions: [RefineAction] = [
+        .moreNatural, .playful, .moreConfident, .lessIntense, .shorter, .moreDirect,
     ]
 
     /// Tone rewrites offered for a draft (keyboard, draft polish).

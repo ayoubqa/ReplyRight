@@ -18,3 +18,28 @@ CURRENT_PROJECT_VERSION = 1
 
 // Your Apple Developer Team ID. Leave empty to build for the simulator only.
 DEVELOPMENT_TEAM =
+
+// ---------------------------------------------------------------------------
+// ReplyRight servers
+//
+// One address per environment. A build talks to the environment named in
+// RR_API_ENVIRONMENT (set in Debug.xcconfig and Release.xcconfig). Debug
+// builds can also switch between them in the app, under You > Connection.
+//
+// An address is written as a scheme and a host because "//" starts a comment
+// in this file. The host may include a port. No AI key ever goes here: keys
+// live only on the server.
+//
+// Development: the server on your Mac (`npm run dev` in backend/).
+//   The simulator can use localhost. A real iPhone cannot: use your Mac's
+//   network name instead, for example  my-mac.local:3000
+RR_API_DEV_SCHEME = http
+RR_API_DEV_HOST = localhost:3000
+
+// Staging: a deployed copy for testing. Leave the host empty until you have one.
+RR_API_STAGING_SCHEME = https
+RR_API_STAGING_HOST =
+
+// Production: the server real users talk to. Replace with your own domain.
+RR_API_PROD_SCHEME = https
+RR_API_PROD_HOST = api.replyright.app

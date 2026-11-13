@@ -7,7 +7,7 @@ extension APIClient {
     public static func standard(component: String, store: SharedStore = .shared) -> APIClient {
         APIClient(
             configuration: Configuration(
-                baseURL: { AppConfig.apiBaseURL(override: store.loadSettings().apiBaseURLOverride) },
+                baseURL: { AppConfig.backend(settings: store.loadSettings()).url },
                 clientName: AppConfig.clientName(component),
                 installID: { InstallIdentity.current(store: store) },
                 // The signed transaction is forwarded as-is. The server decides what it is worth.

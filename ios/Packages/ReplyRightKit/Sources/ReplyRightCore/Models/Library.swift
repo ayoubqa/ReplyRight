@@ -9,13 +9,23 @@ public struct SavedReply: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var style: String
     public var intent: Intent?
     public var createdAt: Date
+    /// The person this reply was written for, when the user had one selected.
+    public var crushID: UUID?
 
-    public init(id: UUID = UUID(), text: String, style: String, intent: Intent? = nil, createdAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        text: String,
+        style: String,
+        intent: Intent? = nil,
+        createdAt: Date = Date(),
+        crushID: UUID? = nil
+    ) {
         self.id = id
         self.text = text
         self.style = style
         self.intent = intent
         self.createdAt = createdAt
+        self.crushID = crushID
     }
 }
 
@@ -97,8 +107,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// The one-time offer to learn from edited replies has been shown.
     public var learnPromptSeen: Bool
     public var lastCrushID: UUID?
-    /// Development builds only: points the app at a different backend.
+    /// Development builds only: a `BackendEnvironment` to use instead of the one the build was made for.
+    public var apiEnvironment: String?
+    /// Development builds only: a typed server address. Wins over `apiEnvironment`.
     public var apiBaseURLOverride: String?
+    /// The person whose profile the keyboard uses for context, picked in the keyboard or the app.
+    public var keyboardCrushID: UUID?
 
     public init(
         hasOnboarded: Bool = false,
@@ -109,7 +123,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         keyboardNudgeDismissed: Bool = false,
         learnPromptSeen: Bool = false,
         lastCrushID: UUID? = nil,
-        apiBaseURLOverride: String? = nil
+        apiEnvironment: String? = nil,
+        apiBaseURLOverride: String? = nil,
+        keyboardCrushID: UUID? = nil
     ) {
         self.hasOnboarded = hasOnboarded
         self.confirmedAdult = confirmedAdult
@@ -119,7 +135,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.keyboardNudgeDismissed = keyboardNudgeDismissed
         self.learnPromptSeen = learnPromptSeen
         self.lastCrushID = lastCrushID
+        self.apiEnvironment = apiEnvironment
         self.apiBaseURLOverride = apiBaseURLOverride
+        self.keyboardCrushID = keyboardCrushID
     }
 
     // Tolerant decoding so new settings can be added without losing old ones.
@@ -133,7 +151,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         keyboardNudgeDismissed = (try? c.decodeIfPresent(Bool.self, forKey: .keyboardNudgeDismissed)) ?? false
         learnPromptSeen = (try? c.decodeIfPresent(Bool.self, forKey: .learnPromptSeen)) ?? false
         lastCrushID = try? c.decodeIfPresent(UUID.self, forKey: .lastCrushID)
+        apiEnvironment = try? c.decodeIfPresent(String.self, forKey: .apiEnvironment)
         apiBaseURLOverride = try? c.decodeIfPresent(String.self, forKey: .apiBaseURLOverride)
+        keyboardCrushID = try? c.decodeIfPresent(UUID.self, forKey: .keyboardCrushID)
     }
 }
 
@@ -153,12 +173,21 @@ public struct KeyboardContext: Codable, Equatable, Sendable {
     public var source: Source
     public var createdAt: Date
     public var crush: CrushPayload?
+    /// The profile `crush` came from, so the context can be cleaned up if that profile is deleted.
+    public var crushID: UUID?
 
-    public init(text: String, source: Source, createdAt: Date = Date(), crush: CrushPayload? = nil) {
+    public init(
+        text: String,
+        source: Source,
+        createdAt: Date = Date(),
+        crush: CrushPayload? = nil,
+        crushID: UUID? = nil
+    ) {
         self.text = ConversationText.clampRecent(text, limit: RequestLimits.conversationChars)
         self.source = source
         self.createdAt = createdAt
         self.crush = crush
+        self.crushID = crushID
     }
 
     public func isExpired(now: Date = Date()) -> Bool {

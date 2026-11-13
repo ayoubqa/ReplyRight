@@ -1,10 +1,16 @@
 import Foundation
 
-// Design tokens for ReplyRight's "After Hours" identity: deep ink and midnight
-// plum, warm ivory, a quiet lavender and a muted coral used sparingly.
+// Design tokens for ReplyRight's "Low Light" identity.
 //
-// Tokens are plain numbers so SwiftUI (the app and share sheet) and UIKit (the
-// keyboard) draw from exactly the same palette.
+// The app is set where this kind of texting happens: a quiet corner, late.
+// The ground is a deep bottle green. Type is a warm bone white. Blush is the
+// voice (quotation marks, messages you might send, the one main action on a
+// screen). Highlighter yellow is the pencil: the cursor, and the single thing
+// on a screen worth noticing. In daylight the ground turns to blush-tinted
+// paper, the ink to bottle green, and blush deepens to raspberry.
+//
+// There are no gradients and no glows. Tokens are plain numbers so SwiftUI
+// (the app and share sheet) and UIKit (the keyboard) draw from one palette.
 
 public struct RGBA: Equatable, Hashable, Sendable {
     public let red: Double
@@ -53,57 +59,71 @@ public struct ColorPair: Equatable, Hashable, Sendable {
 }
 
 public enum Palette {
-    private static let ivory: UInt32 = 0xF6F1E7
-    private static let ink: UInt32 = 0x1B1422
+    private static let bone: UInt32 = 0xF4EEE6
+    private static let bottle: UInt32 = 0x0F231D
+    private static let ink: UInt32 = 0x12322A
+    private static let blush: UInt32 = 0xFFA79D
+    private static let raspberry: UInt32 = 0xC2335A
+    private static let highlighter: UInt32 = 0xF3DC5F
 
-    // Backgrounds and surfaces
-    public static let background = ColorPair(dark: 0x0F0B15, light: 0xF7F2E9)
-    public static let backgroundDeep = ColorPair(dark: 0x09070D, light: 0xEFE8DA)
-    public static let surface = ColorPair(dark: 0x19131F, light: 0xFFFCF6)
-    public static let surfaceRaised = ColorPair(dark: 0x231B2C, light: 0xF1EADD)
-    public static let surfaceHigh = ColorPair(dark: 0x2E2439, light: 0xE7DECE)
-    public static let line = ColorPair(dark: RGBA(ivory, alpha: 0.09), light: RGBA(ink, alpha: 0.09))
-    public static let lineStrong = ColorPair(dark: RGBA(ivory, alpha: 0.17), light: RGBA(ink, alpha: 0.17))
+    // Grounds and surfaces
+    public static let background = ColorPair(dark: bottle, light: 0xFBF1EC)
+    public static let backgroundDeep = ColorPair(dark: 0x0A1814, light: 0xF3E4DD)
+    /// A writing surface or a sheet. Used sparingly; most content sits straight on the ground.
+    public static let surface = ColorPair(dark: 0x152C25, light: 0xFFF9F6)
+    public static let surfaceRaised = ColorPair(dark: 0x1C372F, light: 0xF6E7E0)
+    public static let surfaceHigh = ColorPair(dark: 0x25443A, light: 0xEDD9D0)
+    public static let line = ColorPair(dark: RGBA(bone, alpha: 0.11), light: RGBA(ink, alpha: 0.11))
+    public static let lineStrong = ColorPair(dark: RGBA(bone, alpha: 0.24), light: RGBA(ink, alpha: 0.24))
 
     // Text
-    public static let textPrimary = ColorPair(dark: ivory, light: ink)
-    public static let textSecondary = ColorPair(dark: 0xB8AFC2, light: 0x5F5669)
-    public static let textTertiary = ColorPair(dark: 0x81788C, light: 0x8D8496)
+    public static let textPrimary = ColorPair(dark: bone, light: ink)
+    public static let textSecondary = ColorPair(dark: 0xA9BDB3, light: 0x4F6B62)
+    public static let textTertiary = ColorPair(dark: 0x7C958A, light: 0x758C83)
 
-    // Accents
-    public static let accent = ColorPair(dark: 0xBBA9F5, light: 0x5B43A6)
-    public static let accentSoft = ColorPair(dark: RGBA(0xBBA9F5, alpha: 0.14), light: RGBA(0x5B43A6, alpha: 0.10))
-    public static let coral = ColorPair(dark: 0xF28C72, light: 0xD2553A)
-    public static let coralSoft = ColorPair(dark: RGBA(0xF28C72, alpha: 0.14), light: RGBA(0xD2553A, alpha: 0.10))
+    // The voice: blush after dark, raspberry in daylight
+    public static let accent = ColorPair(dark: blush, light: raspberry)
+    public static let accentSoft = ColorPair(dark: RGBA(blush, alpha: 0.14), light: RGBA(raspberry, alpha: 0.09))
 
-    // Primary button: ivory on ink in the evening, ink on ivory in daylight
-    public static let buttonFill = ColorPair(dark: ivory, light: ink)
-    public static let buttonText = ColorPair(dark: 0x150E21, light: ivory)
+    // The pencil: highlighter yellow as a mark, and an ink that reads on each ground
+    public static let highlight = ColorPair(dark: highlighter, light: 0xF6DE6A)
+    public static let highlightInk = ColorPair(dark: highlighter, light: 0x7A5800)
+    public static let highlightSoft = ColorPair(dark: RGBA(highlighter, alpha: 0.13), light: RGBA(0xF6DE6A, alpha: 0.45))
+    /// The text cursor in the mark: highlighter after dark, ink in daylight (as in the logo).
+    public static let cursor = ColorPair(dark: highlighter, light: ink)
+    /// Kept for screens written against the first identity. Same as `highlightInk`.
+    public static let coral = highlightInk
+    public static let coralSoft = highlightSoft
 
-    // Conversation bubbles
-    public static let bubbleMineStart = ColorPair(dark: 0xCDBEFA, light: 0x4A357F)
-    public static let bubbleMineEnd = ColorPair(dark: 0xA892EE, light: 0x2F2152)
-    public static let bubbleMineText = ColorPair(dark: 0x150E21, light: ivory)
-    public static let bubbleTheirs = ColorPair(dark: 0x2A2134, light: 0xE9E1D2)
-    public static let bubbleTheirsText = ColorPair(dark: ivory, light: ink)
+    // Primary button: blush on bottle after dark, bottle on paper in daylight
+    public static let buttonFill = ColorPair(dark: blush, light: ink)
+    public static let buttonText = ColorPair(dark: bottle, light: 0xFFE7E1)
+
+    // Conversation bubbles. Solid colours: a message is not a gradient.
+    public static let bubbleMine = ColorPair(dark: blush, light: ink)
+    public static let bubbleMineStart = bubbleMine
+    public static let bubbleMineEnd = bubbleMine
+    public static let bubbleMineText = ColorPair(dark: bottle, light: 0xFFF3EF)
+    public static let bubbleTheirs = ColorPair(dark: 0x21403A, light: 0xF1DDD4)
+    public static let bubbleTheirsText = ColorPair(dark: bone, light: ink)
 
     // Status
-    public static let success = ColorPair(dark: 0x8FCBA5, light: 0x2F8F5B)
-    public static let warning = ColorPair(dark: 0xF2C077, light: 0xA8701A)
-    public static let danger = ColorPair(dark: 0xF08A8A, light: 0xC24545)
+    public static let success = ColorPair(dark: 0x8FD9AC, light: 0x1F7A4D)
+    public static let warning = ColorPair(dark: 0xF2B866, light: 0x9A5F0B)
+    public static let danger = ColorPair(dark: 0xFF7166, light: 0xB3261E)
 
-    // Ambient glow behind hero areas
-    public static let glowLavender = ColorPair(dark: 0x7B5CE0, light: 0xB9A6F2)
-    public static let glowCoral = ColorPair(dark: 0xE2735A, light: 0xF2B09E)
+    // Kept so older code compiles. The identity has no glows; both are the ground colour.
+    public static let glowLavender = background
+    public static let glowCoral = background
 
     // Keyboard
-    public static let keyboardKey = ColorPair(dark: 0x4A4056, light: 0xFFFFFF)
-    public static let keyboardKeyPressed = ColorPair(dark: 0x645875, light: 0xDCD4C6)
-    public static let keyboardFunctionKey = ColorPair(dark: 0x2C2437, light: 0xCFC7B9)
-    public static let keyboardFunctionKeyPressed = ColorPair(dark: 0x4A4056, light: 0xFFFFFF)
-    public static let keyboardKeyText = ColorPair(dark: ivory, light: ink)
-    public static let keyboardKeyShadow = ColorPair(dark: RGBA(0x000000, alpha: 0.45), light: RGBA(0x000000, alpha: 0.28))
-    public static let keyboardPanel = ColorPair(dark: 0x19131F, light: 0xFFFCF6)
+    public static let keyboardKey = ColorPair(dark: 0x35504A, light: 0xFFFFFF)
+    public static let keyboardKeyPressed = ColorPair(dark: 0x4C6A62, light: 0xEAD6CD)
+    public static let keyboardFunctionKey = ColorPair(dark: 0x1D352E, light: 0xE4CEC4)
+    public static let keyboardFunctionKeyPressed = ColorPair(dark: 0x35504A, light: 0xFFFFFF)
+    public static let keyboardKeyText = ColorPair(dark: bone, light: ink)
+    public static let keyboardKeyShadow = ColorPair(dark: RGBA(0x000000, alpha: 0.42), light: RGBA(0x3A1F16, alpha: 0.24))
+    public static let keyboardPanel = ColorPair(dark: 0x122720, light: 0xF8ECE6)
 }
 
 #if canImport(UIKit)

@@ -1,5 +1,8 @@
 #include "Shared.xcconfig"
 
-// Release builds talk to your deployed backend over HTTPS. Replace with your domain.
-RR_API_SCHEME = https
-RR_API_HOST = api.replyright.app
+// Release builds talk to production over HTTPS and cannot be redirected from
+// inside the app. To make a TestFlight build that talks to staging, set
+// RR_API_ENVIRONMENT = staging here (and fill in RR_API_STAGING_HOST in
+// Shared.xcconfig).
+RR_API_ENVIRONMENT = production
+RR_ALLOW_ENVIRONMENT_SWITCH = NO

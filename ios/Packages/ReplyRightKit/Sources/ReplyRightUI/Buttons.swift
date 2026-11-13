@@ -52,7 +52,8 @@ public struct RRPressStyle: ButtonStyle {
     }
 }
 
-/// The one confident action on a screen: ivory on ink in the evening, ink on ivory in daylight.
+/// The one main action on a screen, and the only filled control:
+/// blush on bottle after dark, bottle on paper in daylight.
 public struct RRPrimaryButtonStyle: ButtonStyle {
     private let fullWidth: Bool
 
@@ -73,20 +74,22 @@ public struct RRPrimaryButtonStyle: ButtonStyle {
             configuration.label
                 .rrText(.headline)
                 .foregroundStyle(Color.rrButtonText)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, RRSpace.l)
+                .padding(.vertical, RRSpace.xs)
                 .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 54)
                 .background {
                     Capsule().fill(Color.rrButtonFill)
                 }
-                .opacity(isEnabled ? 1 : 0.35)
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .opacity(isEnabled ? 1 : 0.32)
+                .scaleEffect(configuration.isPressed ? 0.975 : 1)
                 .animation(.rrSnappy, value: configuration.isPressed)
                 .contentShape(Capsule())
         }
     }
 }
 
-/// A quieter action: outlined on the surface colour.
+/// A second action: an outline with no fill, so it never competes with the main one.
 public struct RRSecondaryButtonStyle: ButtonStyle {
     private let fullWidth: Bool
     private let compact: Bool
@@ -110,31 +113,32 @@ public struct RRSecondaryButtonStyle: ButtonStyle {
             configuration.label
                 .rrText(compact ? .callout : .headline)
                 .foregroundStyle(Color.rrText)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, compact ? RRSpace.m : RRSpace.l)
-                .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: compact ? 40 : 54)
+                .padding(.vertical, compact ? 6 : RRSpace.xs)
+                .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: compact ? 44 : 54)
                 .background {
-                    Capsule().fill(Color.rrSurfaceRaised)
+                    Capsule().fill(configuration.isPressed ? Color.rrSurfaceRaised : Color.clear)
                 }
                 .overlay {
                     Capsule().strokeBorder(Color.rrLineStrong, lineWidth: 1)
                 }
                 .opacity(isEnabled ? 1 : 0.4)
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .animation(.rrSnappy, value: configuration.isPressed)
                 .contentShape(Capsule())
         }
     }
 }
 
-/// Text-only, for the least important action nearby.
+/// Words only, in the voice colour. For the least important action nearby.
 public struct RRQuietButtonStyle: ButtonStyle {
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .rrText(.callout)
-            .foregroundStyle(Color.rrTextSecondary)
-            .padding(.horizontal, RRSpace.s)
+            .foregroundStyle(Color.rrAccent)
+            .padding(.horizontal, RRSpace.xxs)
             .frame(minHeight: 44)
             .opacity(configuration.isPressed ? 0.5 : 1)
             .contentShape(Rectangle())
@@ -162,6 +166,7 @@ extension ButtonStyle where Self == RRPressStyle {
 // MARK: - Chips
 
 /// A selectable capsule: intents, tones, shortcuts, follow-up questions.
+/// An outline when idle, filled in the voice colour when chosen.
 public struct RRChip: View {
     private let title: String
     private let systemImage: String?
@@ -189,7 +194,6 @@ public struct RRChip: View {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.rrAccent : Color.rrTextTertiary)
                 }
                 Text(title)
                     .rrText(.callout)
@@ -197,17 +201,17 @@ public struct RRChip: View {
                 if isLocked {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.rrTextTertiary)
+                        .opacity(0.7)
                 }
             }
-            .foregroundStyle(isSelected ? Color.rrText : Color.rrTextSecondary)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 40)
+            .foregroundStyle(isSelected ? Color.rrButtonText : Color.rrText)
+            .padding(.horizontal, 15)
+            .frame(minHeight: 44)
             .background {
-                Capsule().fill(isSelected ? Color.rrAccentSoft : Color.rrSurfaceRaised)
+                Capsule().fill(isSelected ? Color.rrButtonFill : Color.clear)
             }
             .overlay {
-                Capsule().strokeBorder(isSelected ? Color.rrAccent.opacity(0.7) : Color.rrLine, lineWidth: 1)
+                Capsule().strokeBorder(isSelected ? Color.clear : Color.rrLineStrong, lineWidth: 1)
             }
             .contentShape(Capsule())
         }

@@ -1,10 +1,96 @@
 import Foundation
 
+/// Which ReplyRight server a build talks to.
+///
+/// Each environment has its own address, set in `ios/Config/Shared.xcconfig`
+/// and carried into every target's Info.plist, so the app, the keyboard and
+/// the share sheet always agree.
+public enum BackendEnvironment: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// The server running on the developer's own Mac.
+    case development
+    /// A deployed server used for testing before release.
+    case staging
+    /// The server real users talk to.
+    case production
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .development: return "Development"
+        case .staging: return "Staging"
+        case .production: return "Production"
+        }
+    }
+
+    public var blurb: String {
+        switch self {
+        case .development: return "The server running on your Mac"
+        case .staging: return "A deployed server for testing"
+        case .production: return "The server real users talk to"
+        }
+    }
+
+    /// The Info.plist key that holds this environment's address.
+    var infoKey: String { "RRAPIBaseURL\(title)" }
+}
+
+/// The server a request will go to, and why that one was picked.
+public struct BackendTarget: Equatable, Sendable {
+    public enum Source: Equatable, Sendable {
+        /// The environment this build was made for.
+        case build
+        /// An environment picked in the app (development builds only).
+        case chosen
+        /// An address typed in the app (development builds only).
+        case custom
+    }
+
+    public var url: URL
+    /// Nil when the address was typed by hand.
+    public var environment: BackendEnvironment?
+    public var source: Source
+
+    public init(url: URL, environment: BackendEnvironment?, source: Source) {
+        self.url = url
+        self.environment = environment
+        self.source = source
+    }
+
+    public var label: String {
+        environment?.title ?? "Custom address"
+    }
+
+    /// The address without a path, for example "http://localhost:3000".
+    public var displayAddress: String {
+        var text = "\(url.scheme ?? "https")://\(url.host ?? "")"
+        if let port = url.port {
+            text += ":\(port)"
+        }
+        return text
+    }
+
+    /// True when the address points at this machine or the local network.
+    public var isLocal: Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".local") {
+            return true
+        }
+        return host.hasPrefix("192.168.") || host.hasPrefix("10.") || host.hasPrefix("172.16.")
+    }
+
+    /// True for an address that only works on the machine running the simulator.
+    public var isLoopback: Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+}
+
 /// Build-time configuration, read from the running bundle's Info.plist.
 ///
 /// The values come from `ios/Config/*.xcconfig`, so the app, the keyboard and
 /// the share extension always agree. Each target's Info.plist carries the same
-/// `RRAppGroup`, `RRKeychainGroup` and `RRAPIBaseURL` keys.
+/// `RRAppGroup`, `RRKeychainGroup` and `RRAPI…` keys.
 public enum AppConfig {
     /// Language for explanations shown in the interface.
     public static let appLocale = "en"
@@ -37,22 +123,77 @@ public enum AppConfig {
         return value.split(separator: ".").count >= 3 && !value.hasPrefix("com.") ? value : nil
     }
 
-    public static var defaultAPIBaseURL: URL {
-        if let value = infoValue("RRAPIBaseURL"), let url = URL(string: value), url.scheme != nil, url.host != nil {
-            return url
-        }
-        return URL(string: fallbackAPIBaseURL)!
+    // MARK: Backend address
+
+    /// Accepts only complete http or https addresses.
+    public static func parseURL(_ text: String?) -> URL? {
+        guard let clean = text?.trimmed, !clean.isEmpty,
+              let url = URL(string: clean), let scheme = url.scheme?.lowercased(),
+              let host = url.host, !host.isEmpty,
+              scheme == "https" || scheme == "http"
+        else { return nil }
+        return url
     }
 
-    /// The backend to talk to: a development override if one is set and valid, otherwise the build's default.
-    public static func apiBaseURL(override: String?) -> URL {
-        if let override = override?.trimmed, !override.isEmpty,
-           let url = URL(string: override), let scheme = url.scheme, url.host != nil,
-           scheme == "https" || scheme == "http" {
+    /// The environment this build was made for (`RR_API_ENVIRONMENT` in the xcconfig files).
+    public static var buildEnvironment: BackendEnvironment {
+        infoValue("RRAPIEnvironment").flatMap { BackendEnvironment(rawValue: $0.lowercased()) } ?? .development
+    }
+
+    /// Whether the app may be pointed at another server at runtime.
+    /// On in Debug builds, off in Release builds (`RR_ALLOW_ENVIRONMENT_SWITCH`).
+    public static var allowsEnvironmentSwitching: Bool {
+        guard let value = infoValue("RRAllowsEnvironmentSwitching")?.uppercased() else { return false }
+        return value == "YES" || value == "TRUE" || value == "1"
+    }
+
+    /// The address configured for an environment, or nil when none was set.
+    public static func baseURL(for environment: BackendEnvironment) -> URL? {
+        if let url = parseURL(infoValue(environment.infoKey)) {
             return url
         }
-        return defaultAPIBaseURL
+        // Builds made before per-environment addresses existed carry a single address.
+        if environment == buildEnvironment, let legacy = parseURL(infoValue("RRAPIBaseURL")) {
+            return legacy
+        }
+        return environment == .development ? URL(string: fallbackAPIBaseURL) : nil
     }
+
+    public static var defaultAPIBaseURL: URL {
+        baseURL(for: buildEnvironment) ?? URL(string: fallbackAPIBaseURL)!
+    }
+
+    /// Decides which server to talk to.
+    ///
+    /// Choices made in the app are honoured only when the build allows
+    /// switching, so a release build can never be redirected by a leftover
+    /// setting.
+    public static func backend(
+        environment chosen: String?,
+        customURL: String?,
+        allowSwitching: Bool = AppConfig.allowsEnvironmentSwitching
+    ) -> BackendTarget {
+        if allowSwitching {
+            if let url = parseURL(customURL) {
+                return BackendTarget(url: url, environment: nil, source: .custom)
+            }
+            if let chosen, let environment = BackendEnvironment(rawValue: chosen), let url = baseURL(for: environment) {
+                return BackendTarget(url: url, environment: environment, source: environment == buildEnvironment ? .build : .chosen)
+            }
+        }
+        return BackendTarget(url: defaultAPIBaseURL, environment: buildEnvironment, source: .build)
+    }
+
+    public static func backend(settings: AppSettings) -> BackendTarget {
+        backend(environment: settings.apiEnvironment, customURL: settings.apiBaseURLOverride)
+    }
+
+    /// The backend to talk to: a typed address if one is set, valid and allowed, otherwise the build's default.
+    public static func apiBaseURL(override: String?) -> URL {
+        backend(environment: nil, customURL: override).url
+    }
+
+    // MARK: App
 
     public static var appVersion: String {
         infoValue("CFBundleShortVersionString") ?? "1.0.0"
