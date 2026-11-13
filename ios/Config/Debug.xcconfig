@@ -1,0 +1,7 @@
+#include "Shared.xcconfig"
+
+// Debug builds talk to the server running on your Mac, and may be pointed at
+// another server from inside the app (You > Connection).
+// The addresses themselves are in Shared.xcconfig.
+RR_API_ENVIRONMENT = development
+RR_ALLOW_ENVIRONMENT_SWITCH = YES

@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Backend (Node / Next.js)
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+backend/evals/out/
+
+# Secrets
+.env*
+!.env.example
+*.pem
+
+# Xcode / Swift
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+.swiftpm/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Hosting
+.vercel

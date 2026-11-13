@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>ReplyRight</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>RRAppGroup</key>
+	<string>$(RR_APP_GROUP)</string>
+	<key>RRKeychainGroup</key>
+	<string>$(RR_KEYCHAIN_GROUP)</string>
+	<key>RRAPIEnvironment</key>
+	<string>$(RR_API_ENVIRONMENT)</string>
+	<key>RRAllowsEnvironmentSwitching</key>
+	<string>$(RR_ALLOW_ENVIRONMENT_SWITCH)</string>
+	<key>RRAPIBaseURLDevelopment</key>
+	<string>$(RR_API_DEV_SCHEME)://$(RR_API_DEV_HOST)</string>
+	<key>RRAPIBaseURLStaging</key>
+	<string>$(RR_API_STAGING_SCHEME)://$(RR_API_STAGING_HOST)</string>
+	<key>RRAPIBaseURLProduction</key>
+	<string>$(RR_API_PROD_SCHEME)://$(RR_API_PROD_HOST)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>

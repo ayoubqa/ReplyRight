@@ -1,0 +1,109 @@
+# XcodeGen description of the same project that scripts/generate_xcodeproj.py writes.
+#
+# The committed ReplyRight.xcodeproj is the source of truth. This file is a
+# fallback: if Xcode ever refuses to open the project, run
+#
+#     brew install xcodegen && cd ios && xcodegen generate
+#
+# to rebuild it from this description. (Not exercised in the environment where
+# the project was first written; keep it in step with the generator script.)
+name: ReplyRight
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+packages:
+  ReplyRightKit:
+    path: Packages/ReplyRightKit
+targets:
+  ReplyRight:
+    type: application
+    platform: iOS
+    sources:
+      - path: ReplyRight
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ReplyRight/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ReplyRight/Resources/ReplyRight.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: $(RR_BUNDLE_ID_PREFIX).app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+    dependencies:
+      - package: ReplyRightKit
+        product: ReplyRightCore
+      - package: ReplyRightKit
+        product: ReplyRightUI
+      - target: ReplyRightKeyboard
+      - target: ReplyRightShare
+  ReplyRightKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ReplyRightKeyboard
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ReplyRightKeyboard/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ReplyRightKeyboard/ReplyRightKeyboard.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: $(RR_BUNDLE_ID_PREFIX).app.keyboard
+        APPLICATION_EXTENSION_API_ONLY: YES
+    dependencies:
+      - package: ReplyRightKit
+        product: ReplyRightCore
+  ReplyRightShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ReplyRightShare
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ReplyRightShare/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ReplyRightShare/ReplyRightShare.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: $(RR_BUNDLE_ID_PREFIX).app.share
+        APPLICATION_EXTENSION_API_ONLY: YES
+    dependencies:
+      - package: ReplyRightKit
+        product: ReplyRightCore
+      - package: ReplyRightKit
+        product: ReplyRightUI
+  ReplyRightUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ReplyRightUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(RR_BUNDLE_ID_PREFIX).app.uitests
+        TEST_TARGET_NAME: ReplyRight
+    dependencies:
+      - target: ReplyRight
+schemes:
+  ReplyRight:
+    build:
+      targets:
+        ReplyRight: all
+    run:
+      config: Debug
+      storeKitConfiguration: ReplyRight.storekit
+    test:
+      config: Debug
+      targets:
+        - ReplyRightUITests
+        - package: ReplyRightKit/ReplyRightCoreTests
+    profile:
+      config: Release
+    archive:
+      config: Release
