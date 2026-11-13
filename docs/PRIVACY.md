@@ -10,17 +10,39 @@ Nothing is uploaded until the user taps a button that asks for something: Read t
 | --- | --- | --- |
 | Screenshots (resized, re-encoded, metadata removed on the device) | Reading a conversation | No. Held in memory for one request, then discarded |
 | Conversation text, draft, custom instruction | The request that needs them | No |
-| My Voice (a trimmed copy) and, if selected, a person's nickname and notes | With each request | No |
+| My Voice (a trimmed copy) | With each request | No |
+| A person's name, where things stand, and the parts of their profile the user switched on | Only with a request where the user picked that person | No |
 | A random install id | Every request | Only as a key for today's usage count, in memory |
 | The signed App Store transaction, when subscribed | Every request | Only a short-lived verification cache, keyed by hash |
 
-The backend writes no conversation content to disk or to logs. Its log lines carry error kinds and status codes only (`backend/src/lib/ai/anthropic-provider.ts`, `backend/src/lib/server/pipeline.ts`). Responses are sent with `Cache-Control: no-store`. The iOS networking layer uses an ephemeral `URLSession` with no cookie store and no disk cache.
+The backend writes no conversation content to disk or to logs. Its log lines carry the task, the status, the timing, an error kind and a random request id, nothing else (`backend/src/lib/ai/anthropic-provider.ts`, `backend/src/lib/server/pipeline.ts`). The AI provider's own error text is logged only in development, or when `RR_DEBUG_ERRORS` is set; it describes parameters, not conversations. Responses are sent with `Cache-Control: no-store`. The iOS networking layer uses an ephemeral `URLSession` with no cookie store and no disk cache.
 
 Content is processed by the configured AI provider (Anthropic) under its API terms.
 
+## People in the notebook
+
+A profile is a private note the user keeps about someone they are talking to. The rules:
+
+- **Only what the user typed.** No field is ever filled in, inferred or enriched by ReplyRight. The prompts tell the model to use a detail only where it fits and never to add facts about the person.
+- **Consent per kind of information.** Each profile has switches: where they met and their language, interests, background, communication preferences, things worth remembering, conversation summaries, and the user's notes. Notes are off by default. `CrushProfile.payload` builds what is sent from those switches and nothing else; the Swift tests assert the exact set of keys.
+- **Only when picked.** A profile travels with a request only when the user chose that person for it, in the app or in the keyboard. Choosing "No one" in the keyboard sends nothing about anyone, including context that came along from the app. The screen says which fields will be used.
+- **Never sent:** the photo, saved replies, saved conversations, and anything switched off.
+- **Never in practice.** A practice conversation with the coach is with an invented person. No profile is sent.
+- **Export.** The person's page writes everything held about them (profile, notes, summaries, saved replies, saved conversations, the photo) to a JSON file and hands it to the system share sheet. The temporary file is removed when the sheet closes.
+- **Permanent deletion.** Deleting a person removes the profile, the photo, the replies and conversations saved for them, and any context about them handed to the keyboard (`SharedStore.deletePerson`, covered by tests).
+
+## Diagnostics
+
+The Connection screen exists so a problem can be found without anyone sharing a conversation.
+
+- The request log lives in memory only and is gone when the app closes. Each entry holds the endpoint name, the host, the HTTP status, the duration, an outcome code, the server's coarse failure reason and the server's request id. It never holds a body, a header value, the install id or the subscription token (`DiagnosticsLog`, covered by a test that sends a marked secret and checks it is absent from the report).
+- "Run a live check" asks the server to make one AI call with a fixed sentence written into the server's code. Nothing from the user is sent. It is offered in development builds only, and the server refuses it outside development unless a token is configured.
+- The server address can be changed at runtime only in a development build.
+- No AI key exists anywhere in the app, its bundle, its settings or this repository.
+
 ## What stays on the device
 
-Voice profile, saved replies, saved sessions, people (under nicknames), favourite styles and settings are JSON files in the App Group container, written with file protection. Saved sessions hold text only, never screenshots.
+Voice profile, saved replies, saved conversations, people and their photos, favourite styles and settings are files in the App Group container, written with file protection. Saved conversations hold text only, never screenshots.
 
 Two things are temporary by design:
 

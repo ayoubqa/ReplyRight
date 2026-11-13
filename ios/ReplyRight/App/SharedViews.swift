@@ -304,11 +304,13 @@ struct FailureNote: View {
 
     var body: some View {
         if let error {
+            let showsDetails = pointsAtConnection(error)
+            let openDetails: (() -> Void)? = showsDetails ? { app.showsConnection = true } : nil
             ErrorNote(
                 error: error,
                 retry: retry,
-                secondaryTitle: pointsAtConnection(error) ? "Connection details" : nil,
-                secondaryAction: pointsAtConnection(error) ? { app.showsConnection = true } : nil
+                secondaryTitle: showsDetails ? "Connection details" : nil,
+                secondaryAction: openDetails
             )
         } else {
             ErrorNote(message, action: retry)
