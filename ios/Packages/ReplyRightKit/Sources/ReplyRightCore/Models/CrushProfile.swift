@@ -291,10 +291,12 @@ public struct CrushProfile: Codable, Identifiable, Equatable, Hashable, Sendable
         alias.trimmed.first.map { String($0).uppercased() } ?? "?"
     }
 
-    /// One line under the name in a list.
+    /// One line under the name in a list: where they met, then where things stand.
     public var subtitle: String {
         let place = metAt.trimmed
-        return place.isEmpty ? stage.title : "\(stage.title) · \(place)"
+        guard let first = place.first else { return stage.title }
+        let capitalised = String(first).uppercased() + place.dropFirst()
+        return "\(capitalised), \(stage.title.lowercased())"
     }
 }
 

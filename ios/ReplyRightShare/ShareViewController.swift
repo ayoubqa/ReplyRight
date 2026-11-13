@@ -261,9 +261,7 @@ private struct RepliesScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if model.isDemo {
-                DemoBadge(detailed: true)
-            }
+            ProvenanceLabel(model.isDemo ? .demo : .live)
             if let headsUp = model.headsUp, !headsUp.isEmpty {
                 HeadsUpNote(headsUp)
             }
@@ -278,7 +276,7 @@ private struct RepliesScreen: View {
             ForEach(model.options) { option in
                 VStack(alignment: .leading, spacing: RRSpace.s) {
                     Text(option.style)
-                        .rrText(.eyebrow)
+                        .rrText(.headline)
                         .foregroundStyle(Color.rrAccent)
                     MessageBubble(option.text, side: .mine)
                     if !option.why.isEmpty {
@@ -292,10 +290,10 @@ private struct RepliesScreen: View {
                             systemImage: model.copiedID == option.id ? "checkmark" : "doc.on.doc"
                         )
                     }
-                    .buttonStyle(RRPrimaryButtonStyle(fullWidth: false))
+                    .buttonStyle(.rrSecondaryCompact)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .rrCard()
+                .rrCard(padding: RRSpace.m)
             }
 
             HStack(spacing: RRSpace.xs) {

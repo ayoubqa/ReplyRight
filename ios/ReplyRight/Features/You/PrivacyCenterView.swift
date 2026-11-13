@@ -14,8 +14,8 @@ struct PrivacyCenterView: View {
 
         ScreenScroll {
             ScreenHeader(
-                lead: "Your conversations ",
-                emphasis: "stay yours.",
+                lead: "Your conversations stay yours",
+                emphasis: "",
                 subtitle: "These are some of the most personal messages you have. Here's exactly what happens to them."
             )
 
@@ -25,6 +25,8 @@ struct PrivacyCenterView: View {
                 Fact("Screenshots are resized and stripped of metadata on your iPhone first.")
                 Fact("Our server reads them in memory, writes your replies, and discards them. Nothing is saved to a database or written to logs.")
                 Fact("Your voice profile travels with each request and isn't stored on our servers.")
+                Fact("When you pick someone from your notebook, their name, where things stand and the details you switched on travel with that one request. Their photo, your saved replies and anything switched off never do.")
+                Fact("Practising with the coach never uses a real person's profile.")
                 Fact("A random install ID counts daily usage. It isn't tied to you or your Apple Account.")
             }
             .rrCard()
@@ -35,6 +37,8 @@ struct PrivacyCenterView: View {
                 Fact("No background monitoring, and no collecting what you type.")
                 Fact("No sending messages for you. You always send them yourself.")
                 Fact("No analytics on what your conversations say.")
+                Fact("No guessing about people. A profile holds only what you typed.")
+                Fact("The connection log holds addresses, status codes and timings. Never messages or screenshots. It lives in memory and is gone when the app closes.")
             }
             .rrCard()
 
@@ -70,11 +74,11 @@ struct PrivacyCenterView: View {
                         pendingErase = .savedReplies
                     }
                     Rule()
-                    DataRow(title: "Saved sessions", detail: count(app.sessions.count), isEmpty: app.sessions.isEmpty) {
+                    DataRow(title: "Saved conversations", detail: count(app.sessions.count), isEmpty: app.sessions.isEmpty) {
                         pendingErase = .sessions
                     }
                     Rule()
-                    DataRow(title: "People", detail: count(app.people.count), isEmpty: app.people.isEmpty) {
+                    DataRow(title: "People and their photos", detail: count(app.people.count), isEmpty: app.people.isEmpty) {
                         pendingErase = .people
                     }
                     Rule()

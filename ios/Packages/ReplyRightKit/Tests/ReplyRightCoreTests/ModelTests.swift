@@ -186,6 +186,12 @@ final class RequestTests: XCTestCase {
         XCTAssertEqual(RefineAction.allCases.map(\.rawValue), [
             "shorter", "funnier", "more_romantic", "more_confident", "less_intense", "more_natural",
             "more_like_me", "flirty", "playful", "charming", "subtle", "warm",
+            "more_direct", "ask_question", "keep_going",
+        ])
+        XCTAssertEqual(CoachMode.allCases.map(\.rawValue), ["ask", "review", "practice"])
+        XCTAssertEqual(CoachTopic.allCases.map(\.rawValue), ["general", "flirting", "conversation", "asking_out", "confidence"])
+        XCTAssertEqual(PracticeScenario.allCases.map(\.rawValue), [
+            "first_message", "keep_it_going", "flirting", "asking_out", "reconnecting", "boundary", "custom",
         ])
         XCTAssertEqual(CrushProfile.Stage.allCases.map(\.rawValue), [
             "new_match", "talking", "been_on_dates", "seeing_each_other", "reconnecting",
@@ -358,21 +364,28 @@ final class SupportTests: XCTestCase {
         XCTAssertTrue(context.isExpired(now: created.addingTimeInterval(25 * 3600)))
     }
 
-    func testAPIBaseURLOverride() {
+    func testATypedServerAddressIsUsedOnlyWhenTheBuildAllowsIt() {
         let fallback = AppConfig.defaultAPIBaseURL
-        XCTAssertEqual(AppConfig.apiBaseURL(override: nil), fallback)
-        XCTAssertEqual(AppConfig.apiBaseURL(override: "   "), fallback)
-        XCTAssertEqual(AppConfig.apiBaseURL(override: "ftp://example.com"), fallback, "Only http and https are accepted")
-        XCTAssertEqual(AppConfig.apiBaseURL(override: "http://my-mac.local:3000").absoluteString, "http://my-mac.local:3000")
+        func url(_ custom: String?, allow: Bool = true) -> URL {
+            AppConfig.backend(environment: nil, customURL: custom, allowSwitching: allow).url
+        }
+        XCTAssertEqual(url(nil), fallback)
+        XCTAssertEqual(url("   "), fallback)
+        XCTAssertEqual(url("ftp://example.com"), fallback, "Only http and https are accepted")
+        XCTAssertEqual(url("my-mac.local:3000"), fallback, "An address needs a scheme")
+        XCTAssertEqual(url("http://my-mac.local:3000").absoluteString, "http://my-mac.local:3000")
+        XCTAssertEqual(url("http://my-mac.local:3000", allow: false), fallback, "A release build ignores a leftover address")
         XCTAssertEqual(AppConfig.privacyURL(base: URL(string: "https://api.example.com")!).absoluteString, "https://api.example.com/privacy")
     }
 
     func testPaletteHexAndOpacity() {
-        let ivory = RGBA(0xF6F1E7)
-        XCTAssertEqual(ivory.red, 246.0 / 255.0, accuracy: 0.0001)
-        XCTAssertEqual(ivory.green, 241.0 / 255.0, accuracy: 0.0001)
-        XCTAssertEqual(ivory.blue, 231.0 / 255.0, accuracy: 0.0001)
-        XCTAssertEqual(ivory.opacity(0.5).alpha, 0.5, accuracy: 0.0001)
+        let bone = RGBA(0xF4EEE6)
+        XCTAssertEqual(bone.red, 244.0 / 255.0, accuracy: 0.0001)
+        XCTAssertEqual(bone.green, 238.0 / 255.0, accuracy: 0.0001)
+        XCTAssertEqual(bone.blue, 230.0 / 255.0, accuracy: 0.0001)
+        XCTAssertEqual(bone.opacity(0.5).alpha, 0.5, accuracy: 0.0001)
         XCTAssertNotEqual(Palette.background.dark, Palette.background.light)
+        XCTAssertEqual(Palette.background.dark, RGBA(0x0F231D), "The ground is bottle green, the same as the app icon")
+        XCTAssertEqual(Palette.bubbleMineStart, Palette.bubbleMineEnd, "Bubbles are solid colours, not gradients")
     }
 }

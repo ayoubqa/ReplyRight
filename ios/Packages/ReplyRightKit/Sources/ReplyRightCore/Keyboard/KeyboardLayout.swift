@@ -48,6 +48,17 @@ public enum KeyboardLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Two letters for the language switch on the keyboard's toolbar.
+    public var shortCode: String { rawValue.uppercased() }
+
+    /// The language after this one, so a single switch can cycle through all of them.
+    /// Adding a language is a new case here plus its layout in `KeyboardLayout`.
+    public var next: KeyboardLanguage {
+        let all = KeyboardLanguage.allCases
+        let index = all.firstIndex(of: self) ?? 0
+        return all[(index + 1) % all.count]
+    }
+
     /// Picks the keyboard language from the user's reply languages.
     public static func preferred(for voice: VoiceProfile) -> KeyboardLanguage {
         if voice.replyLanguage == "es" { return .spanish }

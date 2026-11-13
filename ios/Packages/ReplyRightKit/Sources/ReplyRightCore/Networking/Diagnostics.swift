@@ -62,7 +62,7 @@ public struct RequestRecord: Identifiable, Equatable, Sendable {
         if let mode { parts.append(mode) }
         if imageCount > 0 { parts.append("\(imageCount) image\(imageCount == 1 ? "" : "s")") }
         if let requestID { parts.append("id \(requestID)") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     private static let stamp: DateFormatter = {

@@ -17,6 +17,9 @@ final class KeyboardRootView: UIInputView, UIInputViewAudioFeedback {
 ///
 /// Typing works without Full Access. AI features need it, because iOS requires
 /// Full Access for any keyboard that uses the network.
+///
+/// Whose profile is used as context is always the user's choice, made in the
+/// Reply panel or in the app. Only the parts of a profile the user allowed are sent.
 final class KeyboardViewController: UIInputViewController {
     private enum Panel: Equatable {
         case reply
@@ -62,6 +65,12 @@ final class KeyboardViewController: UIInputViewController {
     /// When the keyboard last changed the text itself, so its own edits are not mistaken for outside changes.
     private var lastOwnEdit: CFTimeInterval = 0
     private var selectedIntent: Intent = .natural
+    /// The profile chosen as context for replies, if any. Nil means "no one in particular".
+    private var selectedPersonID: UUID?
+    /// True once the user picked a person (or no one) in this session, so the app's default no longer applies.
+    private var personWasChosen = false
+    /// A tone adjustment applied to the next set of replies.
+    private var adjustment: RefineAction?
     private var seenReplies: [String] = []
     private var shownOptions: [Suggestion] = []
     private var resultsReplaceDraft = false
@@ -69,6 +78,9 @@ final class KeyboardViewController: UIInputViewController {
     private var work: Task<Void, Never>?
 
     private static let toolbarHeight: CGFloat = 46
+    /// Where the keyboard remembers its own language choice. This is the
+    /// extension's private storage, so it works without Full Access.
+    private static let languageKey = "rr.keyboard.language"
 
     // MARK: Lifecycle
 
@@ -112,9 +124,11 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.onReply = { [weak self] in self?.openReply() }
         toolbar.onRewrite = { [weak self] in self?.openRewrite() }
         toolbar.onSaved = { [weak self] in self?.openSaved() }
+        toolbar.onLanguage = { [weak self] in self?.cycleLanguage() }
         toolbar.onBackToKeys = { [weak self] in self?.closePanel() }
 
         panelView.onChip = { [weak self] id in self?.handleChip(id) }
+        panelView.onPersonChip = { [weak self] id in self?.handlePersonChip(id) }
         panelView.onPrimary = { [weak self] in self?.handlePrimary() }
         panelView.onSecondary = { [weak self] in self?.handleSecondary() }
         panelView.onRow = { [weak self] index in self?.handleRow(index) }
@@ -122,7 +136,13 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        language = KeyboardLanguage.preferred(for: store.loadVoice())
+        if let saved = UserDefaults.standard.string(forKey: KeyboardViewController.languageKey),
+           let chosen = KeyboardLanguage(rawValue: saved) {
+            language = chosen
+        } else {
+            language = KeyboardLanguage.preferred(for: store.loadVoice())
+        }
+        toolbar.setLanguage(code: language.shortCode, name: language.title)
         configureForField(force: true)
     }
 
@@ -257,6 +277,16 @@ final class KeyboardViewController: UIInputViewController {
         )
     }
 
+    /// Switches the keys to the next language and remembers the choice.
+    private func cycleLanguage() {
+        language = language.next
+        UserDefaults.standard.set(language.rawValue, forKey: KeyboardViewController.languageKey)
+        toolbar.setLanguage(code: language.shortCode, name: language.title)
+        UISelectionFeedbackGenerator().selectionChanged()
+        refreshKeys()
+        UIAccessibility.post(notification: .announcement, argument: language.title)
+    }
+
     // MARK: Typing
 
     private func apply(_ edits: [TypingEngine.Edit]) {
@@ -279,25 +309,61 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: Panels
 
     private func show(_ newPanel: Panel, title: String) {
+        let wasShowingKeys = panel == nil
         panel = newPanel
         keysView.stopRepeating()
         keysView.hideCallout()
-        keysView.isHidden = true
-        panelView.isHidden = false
         toolbar.setMode(.panel(title: title))
+        if wasShowingKeys {
+            crossfade(from: keysView, to: panelView)
+        }
     }
 
     private func closePanel() {
         work?.cancel()
         work = nil
+        let wasShowingPanel = panel != nil
         panel = nil
         screen = .none
         shownOptions = []
-        panelView.isHidden = true
-        keysView.isHidden = false
+        adjustment = nil
         toolbar.setMode(isSensitive ? .paused : .typing)
+        if wasShowingPanel {
+            crossfade(from: panelView, to: keysView)
+        } else {
+            panelView.isHidden = true
+            keysView.isHidden = false
+        }
         engine.refreshShift(before: textDocumentProxy.documentContextBeforeInput)
         refreshKeys()
+    }
+
+    /// Swaps the keys and the panel with a short fade, so the keyboard never
+    /// jumps. With Reduce Motion on, the swap is immediate.
+    private func crossfade(from outgoing: UIView, to incoming: UIView) {
+        incoming.layer.removeAllAnimations()
+        outgoing.layer.removeAllAnimations()
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            outgoing.isHidden = true
+            outgoing.alpha = 1
+            incoming.alpha = 1
+            incoming.isHidden = false
+            return
+        }
+        incoming.alpha = 0
+        incoming.isHidden = false
+        UIView.animate(withDuration: 0.16, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]) {
+            outgoing.alpha = 0
+            incoming.alpha = 1
+        } completion: { [weak self] _ in
+            // The state may have changed again while the fade ran. Show whatever is current.
+            guard let self else { return }
+            let showsPanel = self.panel != nil
+            self.panelView.isHidden = !showsPanel
+            self.keysView.isHidden = showsPanel
+            self.panelView.alpha = 1
+            self.keysView.alpha = 1
+        }
     }
 
     private func currentDraft() -> DraftContext {
@@ -329,18 +395,33 @@ final class KeyboardViewController: UIInputViewController {
     private func openReply() {
         guard !isSensitive, requireFullAccess() else { return }
         seenReplies = []
+        adjustment = nil
         show(.reply, title: "Reply")
         renderReplySetup()
+    }
+
+    /// The profile used as context: what the user picked here, otherwise the
+    /// one chosen in the app, otherwise the one that came with the shared conversation.
+    private func activePerson(context: KeyboardContext?) -> CrushProfile? {
+        let people = store.loadPeople()
+        if personWasChosen {
+            return people.first { $0.id == selectedPersonID }
+        }
+        let fallback = store.loadSettings().keyboardCrushID ?? context?.crushID
+        return people.first { $0.id == fallback }
     }
 
     private func renderReplySetup() {
         guard let context = store.loadKeyboardContext() else {
             screen = .replyNeedsContext
+            let hasText = !currentDraft().isEmpty
             panelView.showMessage(
                 title: "What are you replying to?",
-                detail: "I can only see the box you're typing in, not the chat above it. Copy their message, then tap below. You can also share a screenshot or text to ReplyRight and choose \u{201C}Send to my keyboard\u{201D}.",
+                detail: "I can only see the box you're typing in, not the chat above it. Copy their message and tap below"
+                    + (hasText ? ", or use the text that's in the box right now." : ".")
+                    + " You can also share a screenshot to ReplyRight and choose \u{201C}Send to my keyboard\u{201D}.",
                 primaryTitle: "Use copied message",
-                secondaryTitle: "Back to keys"
+                secondaryTitle: hasText ? "Use the text in the box" : "Back to keys"
             )
             return
         }
@@ -354,14 +435,35 @@ final class KeyboardViewController: UIInputViewController {
                 isLocked: !plan.includes(intent)
             )
         }
+
+        // Whose profile to use. Shown only when the user has saved someone.
+        let people = store.loadPeople().filter { !$0.alias.trimmed.isEmpty }
+        let active = activePerson(context: context)
+        var personChips: [AssistPanelView.Chip] = []
+        if !people.isEmpty {
+            personChips.append(AssistPanelView.Chip(id: "none", title: "No one", isSelected: active == nil))
+            personChips.append(contentsOf: people.prefix(8).map { person in
+                AssistPanelView.Chip(id: person.id.uuidString, title: person.alias, isSelected: person.id == active?.id)
+            })
+        }
+
+        var notes: [String] = []
+        if !currentDraft().isEmpty {
+            notes.append("I'll use what you've typed as a starting point.")
+        }
+        if let active {
+            notes.append("\(active.alias)'s profile is sent with this request, only the parts you allowed.")
+        }
+
         screen = .replySetup
         panelView.showSetup(
             title: "Reply to this",
             quote: context.preview,
             chips: chips,
+            people: personChips,
             primaryTitle: "Write replies",
             secondaryTitle: "Clear",
-            footnote: currentDraft().isEmpty ? nil : "I'll use what you've typed as a starting point."
+            footnote: notes.isEmpty ? nil : notes.joined(separator: " ")
         )
     }
 
@@ -381,6 +483,42 @@ final class KeyboardViewController: UIInputViewController {
         renderReplySetup()
     }
 
+    /// Takes the text in the field as what the other person said, then empties
+    /// the field so the user can write their answer. Only on an explicit tap.
+    private func useTextInBox() {
+        let draft = currentDraft()
+        let text = draft.text.trimmed
+        guard !text.isEmpty else {
+            renderReplySetup()
+            return
+        }
+        store.saveKeyboardContext(KeyboardContext(text: text, source: .clipboard))
+        clearField(draft) { [weak self] in
+            self?.renderReplySetup()
+        }
+    }
+
+    /// Removes everything in the field. The host app applies a cursor move on
+    /// its next turn of the run loop, so the deletion waits a moment.
+    private func clearField(_ draft: DraftContext, then: @escaping () -> Void) {
+        let proxy = textDocumentProxy
+        lastOwnEdit = CACurrentMediaTime()
+        if draft.cursorOffsetToEnd > 0 {
+            proxy.adjustTextPosition(byCharacterOffset: draft.cursorOffsetToEnd)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            guard let self else { return }
+            let proxy = self.textDocumentProxy
+            var remaining = draft.deletionCount
+            while remaining > 0, let before = proxy.documentContextBeforeInput, !before.isEmpty {
+                proxy.deleteBackward()
+                remaining -= 1
+            }
+            self.lastOwnEdit = CACurrentMediaTime()
+            then()
+        }
+    }
+
     private func writeReplies(regenerate: Bool) {
         guard let context = store.loadKeyboardContext() else {
             renderReplySetup()
@@ -390,14 +528,19 @@ final class KeyboardViewController: UIInputViewController {
         if !regenerate {
             seenReplies = []
         }
+        let person = activePerson(context: context)
+        // When the user chose "No one", nothing about anyone is sent, including
+        // what came along with a conversation shared from the app.
+        let crush: CrushPayload? = personWasChosen ? person?.payload : (person?.payload ?? context.crush)
         let request = RepliesRequest(
             kind: .reply,
             conversation: context.text,
             intent: selectedIntent,
+            instruction: adjustment.map { "Make these \($0.tweakTitle.lowercased())." } ?? "",
             draft: draft.text,
             avoid: regenerate ? seenReplies : [],
             voice: store.loadVoice().payload,
-            crush: context.crush
+            crush: crush
         )
         lastAction = .replies(regenerate: regenerate)
         resultsReplaceDraft = !draft.isEmpty
@@ -418,7 +561,8 @@ final class KeyboardViewController: UIInputViewController {
                     envelope.result.replies,
                     note: envelope.result.headsUp ?? envelope.result.note,
                     isDemo: envelope.mode == .demo,
-                    moreTitle: "Three more"
+                    moreTitle: "Three more",
+                    allowsAdjusting: true
                 )
             } catch let error as APIError {
                 guard !Task.isCancelled, error != .cancelled else { return }
@@ -442,10 +586,11 @@ final class KeyboardViewController: UIInputViewController {
             )
             return
         }
-        let chips = RefineAction.toneActions.map { AssistPanelView.Chip(id: $0.rawValue, title: $0.title) }
+        let actions = RefineAction.keyboardActions + [.moreRomantic, .askQuestion]
+        let chips = actions.map { AssistPanelView.Chip(id: $0.rawValue, title: $0.tweakTitle) }
         screen = .rewriteSetup
         panelView.showSetup(
-            title: "Make it sound\u{2026}",
+            title: "Make it\u{2026}",
             quote: draft.text,
             chips: chips,
             primaryTitle: nil,
@@ -485,7 +630,8 @@ final class KeyboardViewController: UIInputViewController {
                     envelope.result.options,
                     note: envelope.result.note ?? "",
                     isDemo: envelope.mode == .demo,
-                    moreTitle: "Another tone"
+                    moreTitle: "Another way",
+                    allowsAdjusting: false
                 )
             } catch let error as APIError {
                 guard !Task.isCancelled, error != .cancelled else { return }
@@ -523,7 +669,13 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: Results and failures
 
-    private func presentResults(_ options: [Suggestion], note: String, isDemo: Bool, moreTitle: String) {
+    private func presentResults(
+        _ options: [Suggestion],
+        note: String,
+        isDemo: Bool,
+        moreTitle: String,
+        allowsAdjusting: Bool
+    ) {
         shownOptions = options
         guard !options.isEmpty else {
             showNote(
@@ -533,13 +685,20 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // Demo samples are always labelled as such, never passed off as written for this chat.
         let header = isDemo
             ? "Demo mode: pre-written samples, not replies to your conversation."
             : (note.isEmpty ? "Tap one to use it. You can still edit before sending." : note)
+        let chips: [AssistPanelView.Chip] = allowsAdjusting
+            ? RefineAction.keyboardActions.map {
+                AssistPanelView.Chip(id: $0.rawValue, title: $0.tweakTitle, isSelected: $0 == adjustment)
+            }
+            : []
         screen = .results
         panelView.showResults(
             header: header,
-            rows: options.map { AssistPanelView.Row(badge: isDemo ? "Sample" : $0.style, text: $0.text) },
+            rows: options.map { AssistPanelView.Row(badge: isDemo ? "Sample" : $0.style, text: $0.text, isSample: isDemo) },
+            chips: chips,
             secondaryTitle: moreTitle,
             footnote: nil
         )
@@ -554,15 +713,24 @@ final class KeyboardViewController: UIInputViewController {
                 title: "That's as far as the free plan goes today",
                 detail: "\(error.userMessage) Open ReplyRight to see plans."
             )
-        } else {
-            screen = .failure
-            panelView.showMessage(
-                title: "That didn't go through",
-                detail: error.userMessage,
-                primaryTitle: "Try again",
-                secondaryTitle: "Back to keys"
-            )
+            return
         }
+        var detail = error.userMessage
+        if error.isConnectionProblem {
+            detail += " Typing still works as usual."
+            // In development builds, say what to check. A release build shows only the plain message.
+            if AppConfig.allowsEnvironmentSwitching,
+               let hint = error.setupHint(for: AppConfig.backend(settings: store.loadSettings())) {
+                detail += "\n\n" + hint
+            }
+        }
+        screen = .failure
+        panelView.showMessage(
+            title: error.title,
+            detail: detail,
+            primaryTitle: error.isRetryable ? "Try again" : nil,
+            secondaryTitle: "Back to keys"
+        )
     }
 
     // MARK: Panel actions
@@ -587,9 +755,30 @@ final class KeyboardViewController: UIInputViewController {
         case .rewriteSetup:
             guard let action = RefineAction(rawValue: id) else { return }
             rewrite(action)
+        case .results:
+            // "Adjust": ask for three new replies in that direction. Tapping the
+            // selected adjustment again goes back to plain replies.
+            guard case .replies = lastAction, let action = RefineAction(rawValue: id) else { return }
+            adjustment = adjustment == action ? nil : action
+            writeReplies(regenerate: false)
         default:
             break
         }
+    }
+
+    /// The user picked whose profile to use as context, or no one.
+    private func handlePersonChip(_ id: String) {
+        guard screen == .replySetup else { return }
+        personWasChosen = true
+        selectedPersonID = UUID(uuidString: id)
+        // Remember the choice for next time. This needs Full Access, which Reply already requires.
+        var settings = store.loadSettings()
+        if settings.keyboardCrushID != selectedPersonID {
+            settings.keyboardCrushID = selectedPersonID
+            store.saveSettings(settings)
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+        renderReplySetup()
     }
 
     private func handlePrimary() {
@@ -607,6 +796,12 @@ final class KeyboardViewController: UIInputViewController {
 
     private func handleSecondary() {
         switch screen {
+        case .replyNeedsContext:
+            if currentDraft().isEmpty {
+                closePanel()
+            } else {
+                useTextInBox()
+            }
         case .replySetup:
             // "Clear": forget the conversation that was shared with the keyboard.
             store.clearKeyboardContext()

@@ -4,6 +4,8 @@ import UIKit
 // The ReplyRight bar above the keys, and the panel that replaces the keys
 // while the user is choosing or reading suggestions.
 
+/// A capsule button. The prominent one is filled in the voice colour; the
+/// others are outlines, so there is only ever one obvious thing to tap.
 private func pillConfiguration(title: String?, symbol: String?, prominent: Bool) -> UIButton.Configuration {
     var configuration = UIButton.Configuration.filled()
     configuration.title = title
@@ -13,8 +15,15 @@ private func pillConfiguration(title: String?, symbol: String?, prominent: Bool)
     }
     configuration.cornerStyle = .capsule
     configuration.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
-    configuration.baseBackgroundColor = prominent ? KeyboardTheme.accent : KeyboardTheme.surfaceRaised
-    configuration.baseForegroundColor = prominent ? KeyboardTheme.onAccent : KeyboardTheme.text
+    if prominent {
+        configuration.baseBackgroundColor = KeyboardTheme.accent
+        configuration.baseForegroundColor = KeyboardTheme.onAccent
+    } else {
+        configuration.baseBackgroundColor = .clear
+        configuration.baseForegroundColor = KeyboardTheme.text
+        configuration.background.strokeColor = KeyboardTheme.line
+        configuration.background.strokeWidth = 1
+    }
     configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
         var outgoing = incoming
         outgoing.font = KeyboardTheme.font(14, weight: .semibold)
@@ -37,13 +46,15 @@ final class KeyboardToolbar: UIView {
     var onReply: (() -> Void)?
     var onRewrite: (() -> Void)?
     var onSaved: (() -> Void)?
+    var onLanguage: (() -> Void)?
     var onBackToKeys: (() -> Void)?
 
     private let stack = UIStackView()
-    private let brand = UIImageView()
+    private let brand = KeyboardBrandMark(side: 26)
     private let replyButton = UIButton(type: .system)
     private let rewriteButton = UIButton(type: .system)
     private let savedButton = UIButton(type: .system)
+    private let languageButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let spacer = UIView()
@@ -63,23 +74,21 @@ final class KeyboardToolbar: UIView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        brand.image = KeyboardTheme.symbol("sparkle", size: 15, weight: .semibold)
-        brand.tintColor = KeyboardTheme.coral
-        brand.contentMode = .center
-        brand.setContentHuggingPriority(.required, for: .horizontal)
-        brand.isAccessibilityElement = false
-
-        replyButton.configuration = pillConfiguration(title: "Reply", symbol: "text.bubble", prominent: true)
+        replyButton.configuration = pillConfiguration(title: "Reply", symbol: "quote.opening", prominent: true)
         replyButton.addTarget(self, action: #selector(tapReply), for: .touchUpInside)
         replyButton.accessibilityHint = "Suggests replies to a conversation you shared"
 
-        rewriteButton.configuration = pillConfiguration(title: "Rewrite", symbol: "wand.and.stars", prominent: false)
+        rewriteButton.configuration = pillConfiguration(title: "Rewrite", symbol: "pencil", prominent: false)
         rewriteButton.addTarget(self, action: #selector(tapRewrite), for: .touchUpInside)
         rewriteButton.accessibilityHint = "Rewrites what you have typed"
 
         savedButton.configuration = pillConfiguration(title: nil, symbol: "bookmark", prominent: false)
         savedButton.addTarget(self, action: #selector(tapSaved), for: .touchUpInside)
         savedButton.accessibilityLabel = "Saved replies"
+
+        languageButton.configuration = pillConfiguration(title: "EN", symbol: nil, prominent: false)
+        languageButton.addTarget(self, action: #selector(tapLanguage), for: .touchUpInside)
+        languageButton.accessibilityHint = "Switches the keyboard language"
 
         backButton.configuration = pillConfiguration(title: "Keys", symbol: "keyboard", prominent: false)
         backButton.addTarget(self, action: #selector(tapBack), for: .touchUpInside)
@@ -92,7 +101,7 @@ final class KeyboardToolbar: UIView {
 
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        for view in [brand, backButton, replyButton, rewriteButton, titleLabel, spacer, savedButton] {
+        for view in [brand, backButton, replyButton, rewriteButton, titleLabel, spacer, languageButton, savedButton] as [UIView] {
             stack.addArrangedSubview(view)
         }
         setMode(.typing)
@@ -103,6 +112,14 @@ final class KeyboardToolbar: UIView {
         fatalError("init(coder:) is not supported")
     }
 
+    /// Shows which language the keys are in, for example "EN" or "ES".
+    func setLanguage(code: String, name: String) {
+        var configuration = languageButton.configuration
+        configuration?.title = code
+        languageButton.configuration = configuration
+        languageButton.accessibilityLabel = "Keyboard language: \(name)"
+    }
+
     func setMode(_ mode: Mode) {
         switch mode {
         case .typing:
@@ -111,6 +128,7 @@ final class KeyboardToolbar: UIView {
             replyButton.isHidden = false
             rewriteButton.isHidden = false
             savedButton.isHidden = false
+            languageButton.isHidden = false
             titleLabel.isHidden = true
         case .paused:
             brand.isHidden = false
@@ -118,6 +136,7 @@ final class KeyboardToolbar: UIView {
             replyButton.isHidden = true
             rewriteButton.isHidden = true
             savedButton.isHidden = true
+            languageButton.isHidden = false
             titleLabel.isHidden = false
             titleLabel.text = "ReplyRight is paused in this field"
         case .panel(let title):
@@ -126,6 +145,7 @@ final class KeyboardToolbar: UIView {
             replyButton.isHidden = true
             rewriteButton.isHidden = true
             savedButton.isHidden = true
+            languageButton.isHidden = true
             titleLabel.isHidden = false
             titleLabel.text = title
         }
@@ -134,71 +154,24 @@ final class KeyboardToolbar: UIView {
     @objc private func tapReply() { onReply?() }
     @objc private func tapRewrite() { onRewrite?() }
     @objc private func tapSaved() { onSaved?() }
+    @objc private func tapLanguage() { onLanguage?() }
     @objc private func tapBack() { onBackToKeys?() }
 }
 
-/// Three dots that pulse, like someone typing.
-final class TypingDotsView: UIView {
-    private let dots: [CALayer] = (0..<3).map { _ in CALayer() }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        for dot in dots {
-            dot.cornerRadius = 3.5
-            layer.addSublayer(dot)
-        }
-        isAccessibilityElement = false
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: 34, height: 12)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let colour = KeyboardTheme.textSecondary.resolvedColor(with: traitCollection).cgColor
-        for (index, dot) in dots.enumerated() {
-            dot.backgroundColor = colour
-            dot.frame = CGRect(x: CGFloat(index) * 12, y: bounds.midY - 3.5, width: 7, height: 7)
-        }
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        guard window != nil else { return }
-        for (index, dot) in dots.enumerated() {
-            let pulse = CABasicAnimation(keyPath: "opacity")
-            pulse.fromValue = 0.25
-            pulse.toValue = 1
-            pulse.duration = 0.55
-            pulse.autoreverses = true
-            pulse.repeatCount = .infinity
-            pulse.beginTime = CACurrentMediaTime() + Double(index) * 0.16
-            pulse.isRemovedOnCompletion = false
-            dot.add(pulse, forKey: "pulse")
-        }
-    }
-}
-
-/// A tappable suggestion: a small style label and the message.
+/// A tappable suggestion: the approach it takes, and the message.
 private final class SuggestionRow: UIControl {
     private let badge = UILabel()
     private let message = UILabel()
 
-    init(badgeText: String, text: String) {
+    init(badgeText: String, text: String, isSample: Bool) {
         super.init(frame: .zero)
         backgroundColor = KeyboardTheme.surfaceRaised
-        layer.cornerRadius = 14
+        layer.cornerRadius = 16
         layer.cornerCurve = .continuous
 
-        badge.text = badgeText.uppercased()
-        badge.font = KeyboardTheme.font(10, weight: .semibold)
-        badge.textColor = KeyboardTheme.accent
+        badge.text = badgeText
+        badge.font = KeyboardTheme.font(12, weight: .semibold)
+        badge.textColor = isSample ? KeyboardTheme.highlight : KeyboardTheme.accent
         badge.isHidden = badgeText.isEmpty
 
         message.text = text
@@ -248,15 +221,21 @@ final class AssistPanelView: UIView {
     struct Row {
         let badge: String
         let text: String
+        var isSample = false
     }
 
+    /// A chip in the main row: what the reply should do, how to rewrite, how to adjust.
     var onChip: ((String) -> Void)?
+    /// A chip in the "With" row: whose profile to use as context.
+    var onPersonChip: ((String) -> Void)?
     var onPrimary: (() -> Void)?
     var onSecondary: (() -> Void)?
     var onRow: ((Int) -> Void)?
 
     private let scroll = UIScrollView()
     private let content = UIStackView()
+    private var chipIDs: [String] = []
+    private var personChipIDs: [String] = []
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -297,6 +276,7 @@ final class AssistPanelView: UIView {
         title: String,
         quote: String?,
         chips: [Chip],
+        people: [Chip] = [],
         primaryTitle: String?,
         secondaryTitle: String?,
         footnote: String?
@@ -307,45 +287,60 @@ final class AssistPanelView: UIView {
             content.addArrangedSubview(makeQuote(quote))
         }
         if !chips.isEmpty {
-            content.addArrangedSubview(makeChips(chips))
+            chipIDs = chips.map(\.id)
+            content.addArrangedSubview(makeChips(chips, label: nil, action: #selector(tapChip(_:))))
+        }
+        if !people.isEmpty {
+            personChipIDs = people.map(\.id)
+            content.addArrangedSubview(makeChips(people, label: "With", action: #selector(tapPersonChip(_:))))
         }
         if let footnote {
             content.addArrangedSubview(makeBody(footnote, small: true))
         }
         addButtons(primaryTitle: primaryTitle, secondaryTitle: secondaryTitle)
+        fadeIn()
     }
 
+    /// The mark with its cursor blinking, and a line about what is happening.
     func showLoading(_ line: String) {
         reset()
-        let dots = TypingDotsView()
-        let holder = UIStackView(arrangedSubviews: [dots, UIView()])
-        holder.axis = .horizontal
-        content.addArrangedSubview(UIView.spacer(height: 18))
-        content.addArrangedSubview(holder)
+        let mark = KeyboardBrandMark(side: 38)
+        mark.isWriting = true
         let label = UILabel()
         label.text = line
-        label.font = KeyboardTheme.serif(16)
+        label.font = KeyboardTheme.font(16)
         label.textColor = KeyboardTheme.textSecondary
         label.numberOfLines = 2
-        content.addArrangedSubview(label)
+        let holder = UIStackView(arrangedSubviews: [mark, label])
+        holder.axis = .horizontal
+        holder.alignment = .center
+        holder.spacing = 10
+        content.addArrangedSubview(UIView.spacer(height: 22))
+        content.addArrangedSubview(holder)
         UIAccessibility.post(notification: .announcement, argument: line)
+        fadeIn()
     }
 
-    func showResults(header: String?, rows: [Row], secondaryTitle: String?, footnote: String?) {
+    func showResults(header: String?, rows: [Row], chips: [Chip] = [], secondaryTitle: String?, footnote: String?) {
         reset()
         if let header, !header.isEmpty {
             content.addArrangedSubview(makeBody(header, small: true))
         }
         for (index, row) in rows.enumerated() {
-            let control = SuggestionRow(badgeText: row.badge, text: row.text)
+            let control = SuggestionRow(badgeText: row.badge, text: row.text, isSample: row.isSample)
             control.tag = index
             control.addTarget(self, action: #selector(tapRow(_:)), for: .touchUpInside)
             content.addArrangedSubview(control)
+        }
+        if !chips.isEmpty {
+            chipIDs = chips.map(\.id)
+            content.addArrangedSubview(makeChips(chips, label: "Adjust", action: #selector(tapChip(_:))))
         }
         if let footnote {
             content.addArrangedSubview(makeBody(footnote, small: true))
         }
         addButtons(primaryTitle: nil, secondaryTitle: secondaryTitle)
+        fadeIn()
     }
 
     func showMessage(title: String, detail: String, primaryTitle: String?, secondaryTitle: String?) {
@@ -354,6 +349,7 @@ final class AssistPanelView: UIView {
         content.addArrangedSubview(makeTitle(title))
         content.addArrangedSubview(makeBody(detail, small: false))
         addButtons(primaryTitle: primaryTitle, secondaryTitle: secondaryTitle)
+        fadeIn()
     }
 
     // MARK: Building blocks
@@ -363,13 +359,27 @@ final class AssistPanelView: UIView {
             content.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        chipIDs = []
+        personChipIDs = []
         scroll.setContentOffset(.zero, animated: false)
+    }
+
+    /// New content arrives with a short fade, so the panel never jumps.
+    private func fadeIn() {
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            content.alpha = 1
+            return
+        }
+        content.alpha = 0
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
+            self.content.alpha = 1
+        }
     }
 
     private func makeTitle(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
-        label.font = KeyboardTheme.serif(19)
+        label.font = KeyboardTheme.serif(18)
         label.textColor = KeyboardTheme.text
         label.numberOfLines = 2
         label.accessibilityTraits = .header
@@ -395,7 +405,7 @@ final class AssistPanelView: UIView {
 
         let box = UIView()
         box.backgroundColor = KeyboardTheme.surfaceRaised
-        box.layer.cornerRadius = 12
+        box.layer.cornerRadius = 14
         box.layer.cornerCurve = .continuous
         box.addSubview(label)
         NSLayoutConstraint.activate([
@@ -407,11 +417,22 @@ final class AssistPanelView: UIView {
         return box
     }
 
-    private func makeChips(_ chips: [Chip]) -> UIView {
+    /// A row of chips that scrolls sideways, with an optional quiet label in front.
+    private func makeChips(_ chips: [Chip], label: String?, action: Selector) -> UIView {
         let row = UIStackView()
         row.axis = .horizontal
+        row.alignment = .center
         row.spacing = 6
         row.translatesAutoresizingMaskIntoConstraints = false
+
+        if let label {
+            let caption = UILabel()
+            caption.text = label
+            caption.font = KeyboardTheme.font(12, weight: .medium)
+            caption.textColor = KeyboardTheme.textTertiary
+            caption.isAccessibilityElement = false
+            row.addArrangedSubview(caption)
+        }
 
         for (index, chip) in chips.enumerated() {
             let button = UIButton(type: .system)
@@ -424,13 +445,15 @@ final class AssistPanelView: UIView {
             button.configuration = configuration
             button.tag = index
             button.accessibilityTraits = chip.isSelected ? [.button, .selected] : .button
+            if let label {
+                button.accessibilityLabel = "\(label) \(chip.title)"
+            }
             if chip.isLocked {
                 button.accessibilityHint = "Part of ReplyRight Pro"
             }
-            button.addTarget(self, action: #selector(tapChip(_:)), for: .touchUpInside)
+            button.addTarget(self, action: action, for: .touchUpInside)
             row.addArrangedSubview(button)
         }
-        chipIDs = chips.map(\.id)
 
         let scroller = UIScrollView()
         scroller.showsHorizontalScrollIndicator = false
@@ -446,8 +469,6 @@ final class AssistPanelView: UIView {
         ])
         return scroller
     }
-
-    private var chipIDs: [String] = []
 
     private func addButtons(primaryTitle: String?, secondaryTitle: String?) {
         guard primaryTitle != nil || secondaryTitle != nil else { return }
@@ -473,6 +494,11 @@ final class AssistPanelView: UIView {
     @objc private func tapChip(_ sender: UIButton) {
         guard chipIDs.indices.contains(sender.tag) else { return }
         onChip?(chipIDs[sender.tag])
+    }
+
+    @objc private func tapPersonChip(_ sender: UIButton) {
+        guard personChipIDs.indices.contains(sender.tag) else { return }
+        onPersonChip?(personChipIDs[sender.tag])
     }
 
     @objc private func tapRow(_ sender: UIControl) {

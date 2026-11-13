@@ -397,7 +397,8 @@ private struct WelcomeStep: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: RRSpace.m) {
-                Eyebrow("ReplyRight")
+                BrandLogo(height: 24)
+                    .padding(.bottom, RRSpace.xxs)
                 EditorialTitle("Say it better.\n", emphasis: "Be yourself.", style: .hero)
                 Text("For the moment you stare at a message and think: what do I even say? Let's find words that sound like you.")
                     .rrText(.bodyLarge)

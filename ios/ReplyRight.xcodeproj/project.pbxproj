@@ -153,6 +153,10 @@
 			isa = PBXBuildFile;
 			fileRef = 362ECC655D924CEB3BFA9D76;
 		};
+		ABD49A61E0530AC0CB0AC6CD = {
+			isa = PBXBuildFile;
+			fileRef = C4A3A3B02C82CB636EB0C333;
+		};
 		ACBF18FCF85D9E8D7C72F3D7 = {
 			isa = PBXBuildFile;
 			fileRef = 651F150649E642EC19FF5ED9;
@@ -437,6 +441,12 @@
 			isa = PBXFileReference;
 			lastKnownFileType = text.xcconfig;
 			path = Release.xcconfig;
+			sourceTree = "<group>";
+		};
+		C4A3A3B02C82CB636EB0C333 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = KeyboardBrand.swift;
 			sourceTree = "<group>";
 		};
 		C5784714F253A982F08B2D75 = {
@@ -749,6 +759,7 @@
 			children = (
 				D737294D8A57C21AD0BA5FB2,
 				99E2B310669EFFB726284197,
+				C4A3A3B02C82CB636EB0C333,
 				034E3E052F797DA94AF0BB94,
 				20B471071A3199AABEE93761,
 				496EC430D51908EACDFC8046,
@@ -959,6 +970,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F70556BE0BDD6B733C39EC7,
+				ABD49A61E0530AC0CB0AC6CD,
 				249137934DD750557ED99EF7,
 				48ABE0C1779ECC1BDCBFC026,
 			);

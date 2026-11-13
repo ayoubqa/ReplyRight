@@ -22,17 +22,19 @@ enum KeyboardTheme {
     static let surfaceRaised = UIColor.dynamic(Palette.surfaceRaised)
     static let line = UIColor.dynamic(Palette.lineStrong)
     static let coral = UIColor.dynamic(Palette.coral)
+    static let highlight = UIColor.dynamic(Palette.highlightInk)
+    static let cursor = UIColor.dynamic(Palette.cursor)
     static let warning = UIColor.dynamic(Palette.warning)
+    static let danger = UIColor.dynamic(Palette.danger)
 
     static func font(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
         UIFont.systemFont(ofSize: size, weight: weight)
     }
 
-    /// The system serif, matching the app's display type.
+    /// Titles inside the keyboard. The keyboard stays in the system face so it
+    /// sits naturally next to the keys; the name is kept from the first design.
     static func serif(_ size: CGFloat) -> UIFont {
-        let base = UIFont.systemFont(ofSize: size, weight: .regular)
-        guard let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
-        return UIFont(descriptor: descriptor, size: size)
+        UIFont.systemFont(ofSize: size, weight: .semibold)
     }
 
     static func symbol(_ name: String, size: CGFloat, weight: UIImage.SymbolWeight = .regular) -> UIImage? {

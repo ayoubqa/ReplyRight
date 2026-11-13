@@ -294,7 +294,7 @@ ObservableObject Published EnvironmentObject AppStorage SceneStorage UIApplicati
 Element Key Value Index Iterator Body Output Failure Wrapped Success Input Response Payload Option Schema T U
 CGImageSource CGImage CIImage SwiftUICore Combine Dispatch os Darwin Security XCUIElementQuery Never
 CFTimeInterval CheckedContinuation FoundationNetworking NSCoder NSDecimalNumber NSDirectionalEdgeInsets NSSecureCoding
-RunLoop UIConfigurationTextAttributesTransformer UIListContentConfiguration UIBackgroundConfiguration
+RunLoop UIConfigurationTextAttributesTransformer UIListContentConfiguration UIBackgroundConfiguration Selector
 """.split())
 
 
