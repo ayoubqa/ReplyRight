@@ -65,23 +65,23 @@ struct PrivacyCenterView: View {
                     DataRow(title: "Shared conversations", detail: sharedDetail, isEmpty: app.inbox == nil && app.keyboardContext == nil) {
                         pendingErase = .sharedContext
                     }
-                    Divider().overlay(Color.rrLine)
+                    Rule()
                     DataRow(title: "Saved replies", detail: count(app.savedReplies.count), isEmpty: app.savedReplies.isEmpty) {
                         pendingErase = .savedReplies
                     }
-                    Divider().overlay(Color.rrLine)
+                    Rule()
                     DataRow(title: "Saved sessions", detail: count(app.sessions.count), isEmpty: app.sessions.isEmpty) {
                         pendingErase = .sessions
                     }
-                    Divider().overlay(Color.rrLine)
+                    Rule()
                     DataRow(title: "People", detail: count(app.people.count), isEmpty: app.people.isEmpty) {
                         pendingErase = .people
                     }
-                    Divider().overlay(Color.rrLine)
+                    Rule()
                     DataRow(title: "Favourite styles", detail: count(app.styles.count), isEmpty: app.styles.isEmpty) {
                         pendingErase = .styles
                     }
-                    Divider().overlay(Color.rrLine)
+                    Rule()
                     DataRow(title: "My Voice", detail: "Preferences and \(app.voice.samples.count) examples", isEmpty: app.voice == .standard) {
                         pendingErase = .voice
                     }

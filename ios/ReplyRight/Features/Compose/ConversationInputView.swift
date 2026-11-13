@@ -15,10 +15,12 @@ struct ConversationInputView: View {
 
         ScreenScroll {
             ScreenHeader(
-                lead: "Show me ",
-                emphasis: "what they said.",
+                lead: "Show me what they said",
+                emphasis: "",
                 subtitle: "A screenshot is easiest. A few messages before the last one help me get the context."
             )
+
+            ConnectionNotice()
 
             screenshots
 
@@ -61,7 +63,8 @@ struct ConversationInputView: View {
             .disabled(!compose.hasInput || compose.isPreparingImages)
             .padding(.horizontal, RRSpace.screen)
             .padding(.vertical, RRSpace.s)
-            .background(.ultraThinMaterial)
+            .background(Color.rrBackground)
+            .overlay(alignment: .top) { Rule() }
             .accessibilityIdentifier("input-read")
         }
         .navigationBarTitleDisplayMode(.inline)

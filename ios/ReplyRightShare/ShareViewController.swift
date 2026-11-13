@@ -281,7 +281,6 @@ private struct RepliesScreen: View {
                         .rrText(.eyebrow)
                         .foregroundStyle(Color.rrAccent)
                     MessageBubble(option.text, side: .mine)
-                        .padding(.leading, -44)
                     if !option.why.isEmpty {
                         MarginNote(option.why)
                     }

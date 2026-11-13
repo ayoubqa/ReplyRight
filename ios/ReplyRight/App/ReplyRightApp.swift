@@ -1,6 +1,7 @@
 import ReplyRightCore
 import ReplyRightUI
 import SwiftUI
+import UIKit
 
 @main
 struct ReplyRightApp: App {
@@ -8,6 +9,7 @@ struct ReplyRightApp: App {
 
     init() {
         Self.applyLaunchArguments()
+        Self.applyAppearance()
         _app = State(initialValue: AppModel())
     }
 
@@ -33,10 +35,42 @@ struct ReplyRightApp: App {
             store.saveSettings(settings)
         }
     }
+
+    /// Bars sit on the same ground as the screens, with titles in the display face.
+    private static func applyAppearance() {
+        let ground = UIColor.dynamic(Palette.background)
+        let text = UIColor.dynamic(Palette.textPrimary)
+        let quiet = UIColor.dynamic(Palette.textTertiary)
+        let voice = UIColor.dynamic(Palette.accent)
+
+        let navigation = UINavigationBarAppearance()
+        navigation.configureWithOpaqueBackground()
+        navigation.backgroundColor = ground
+        navigation.shadowColor = .clear
+        navigation.titleTextAttributes = [.foregroundColor: text, .font: RRFonts.displayUIFont(size: 18)]
+        navigation.largeTitleTextAttributes = [.foregroundColor: text, .font: RRFonts.displayUIFont(size: 32)]
+        UINavigationBar.appearance().standardAppearance = navigation
+        UINavigationBar.appearance().scrollEdgeAppearance = navigation
+        UINavigationBar.appearance().compactAppearance = navigation
+
+        let tabs = UITabBarAppearance()
+        tabs.configureWithOpaqueBackground()
+        tabs.backgroundColor = ground
+        tabs.shadowColor = UIColor.dynamic(Palette.line)
+        for item in [tabs.stackedLayoutAppearance, tabs.inlineLayoutAppearance, tabs.compactInlineLayoutAppearance] {
+            item.normal.iconColor = quiet
+            item.normal.titleTextAttributes = [.foregroundColor: quiet]
+            item.selected.iconColor = voice
+            item.selected.titleTextAttributes = [.foregroundColor: voice]
+        }
+        UITabBar.appearance().standardAppearance = tabs
+        UITabBar.appearance().scrollEdgeAppearance = tabs
+    }
 }
 
 /// Decides between first-run onboarding and the main interface, and hosts
-/// everything that can appear over any screen: the paywall and toasts.
+/// everything that can appear over any screen: the paywall, the connection
+/// screen and toasts.
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
@@ -62,6 +96,14 @@ struct RootView: View {
                 .environment(app)
                 .preferredColorScheme(app.colorScheme)
         }
+        .sheet(isPresented: $app.showsConnection) {
+            NavigationStack {
+                ConnectionView(isSheet: true)
+            }
+            .environment(app)
+            .tint(Color.rrAccent)
+            .preferredColorScheme(app.colorScheme)
+        }
         .task {
             await app.purchases.loadProducts()
             await app.refresh(force: true)
@@ -81,15 +123,15 @@ struct MainTabs: View {
 
         TabView(selection: $app.selectedTab) {
             HomeTab()
-                .tabItem { Label("Home", systemImage: "bubble.left.and.text.bubble.right") }
+                .tabItem { Label("Reply", systemImage: "quote.opening") }
                 .tag(AppModel.Tab.home)
 
             CoachTab()
-                .tabItem { Label("Coach", systemImage: "lightbulb") }
+                .tabItem { Label("Coach", systemImage: "graduationcap") }
                 .tag(AppModel.Tab.coach)
 
             LibraryTab()
-                .tabItem { Label("Saved", systemImage: "bookmark") }
+                .tabItem { Label("Notebook", systemImage: "book.closed") }
                 .tag(AppModel.Tab.library)
 
             YouTab()

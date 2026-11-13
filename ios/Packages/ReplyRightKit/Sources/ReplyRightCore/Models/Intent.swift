@@ -77,13 +77,13 @@ public enum Intent: String, Codable, CaseIterable, Identifiable, Hashable, Senda
     public var symbol: String {
         switch self {
         case .natural: return "text.bubble"
-        case .flirt: return "sparkles"
+        case .flirt: return "flame"
         case .laugh: return "face.smiling"
         case .interest: return "eyes"
         case .confident: return "bolt"
         case .keepGoing: return "ellipsis.bubble"
         case .mysterious: return "moon.stars"
-        case .charming: return "wand.and.stars"
+        case .charming: return "hand.wave"
         case .askOut: return "calendar.badge.plus"
         case .dryReply: return "flame"
         case .feelings: return "heart.text.square"

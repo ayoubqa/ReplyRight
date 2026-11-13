@@ -18,7 +18,7 @@ struct UnderstandingView: View {
                 ThinkingView(lines: Microcopy.reading)
                     .padding(.top, RRSpace.xl)
             case .failed(let message):
-                ErrorNote(message) {
+                FailureNote(error: compose.failure, message: message) {
                     compose.startAnalysis(app: app)
                 }
                 .padding(.top, RRSpace.l)
@@ -43,7 +43,8 @@ struct UnderstandingView: View {
                 .buttonStyle(.rrPrimary)
                 .padding(.horizontal, RRSpace.screen)
                 .padding(.vertical, RRSpace.s)
-                .background(.ultraThinMaterial)
+                .background(Color.rrBackground)
+                .overlay(alignment: .top) { Rule() }
                 .accessibilityIdentifier("understanding-write")
             }
         }
@@ -103,9 +104,7 @@ private struct ReadSection: View {
                     .accessibilityIdentifier("understanding-read")
             }
 
-            if isDemo {
-                DemoBadge(detailed: true)
-            }
+            ProvenanceLabel(isDemo ? .demo : .live)
 
             if let latest = analysis.latestMessage, !latest.isEmpty {
                 MessageBubble(latest, side: .theirs)
@@ -255,37 +254,57 @@ struct IntentSection: View {
     }
 }
 
-/// All the things a reply can be for. Suggested ones are marked; Pro ones show a lock on the free plan.
+/// All the things a reply can be for, as a cloud of choices. The ones that fit
+/// this conversation come first and carry a pencil dot; Pro ones show a lock on
+/// the free plan. The chosen one is explained in a line underneath.
 struct IntentGrid: View {
     @Environment(AppModel.self) private var app
     let selection: Intent
     var suggested: [Intent] = []
     let onSelect: (Intent) -> Void
 
-    private let columns = [GridItem(.flexible(), spacing: RRSpace.xs), GridItem(.flexible(), spacing: RRSpace.xs)]
+    private var ordered: [Intent] {
+        let fits = suggested.filter { Intent.selectorOrder.contains($0) }
+        return fits + Intent.selectorOrder.filter { !fits.contains($0) }
+    }
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: RRSpace.xs) {
-            ForEach(Intent.selectorOrder) { intent in
-                IntentTile(
-                    intent: intent,
-                    isSelected: intent == selection,
-                    isSuggested: suggested.contains(intent),
-                    isLocked: app.isLocked(intent)
-                ) {
-                    if app.isLocked(intent) {
-                        _ = app.requirePro(.intent(intent))
-                    } else {
-                        onSelect(intent)
-                        Haptics.select()
+        VStack(alignment: .leading, spacing: RRSpace.s) {
+            FlowLayout {
+                ForEach(ordered) { intent in
+                    IntentChip(
+                        intent: intent,
+                        isSelected: intent == selection,
+                        isSuggested: suggested.contains(intent),
+                        isLocked: app.isLocked(intent)
+                    ) {
+                        if app.isLocked(intent) {
+                            _ = app.requirePro(.intent(intent))
+                        } else {
+                            onSelect(intent)
+                            Haptics.select()
+                        }
                     }
                 }
+            }
+            Text(selection.blurb)
+                .rrText(.callout)
+                .foregroundStyle(Color.rrTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !suggested.isEmpty {
+                HStack(spacing: 6) {
+                    Circle().fill(Color.rrHighlight).frame(width: 7, height: 7)
+                    Text("Fits this conversation")
+                        .rrText(.footnote)
+                        .foregroundStyle(Color.rrTextTertiary)
+                }
+                .accessibilityElement(children: .combine)
             }
         }
     }
 }
 
-private struct IntentTile: View {
+private struct IntentChip: View {
     let intent: Intent
     let isSelected: Bool
     let isSuggested: Bool
@@ -294,48 +313,34 @@ private struct IntentTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: RRSpace.xs) {
-                HStack {
-                    Image(systemName: intent.symbol)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.rrAccent : Color.rrTextSecondary)
-                    Spacer()
-                    if isLocked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.rrTextTertiary)
-                    } else if isSuggested {
-                        Text("Fits")
-                            .rrText(.caption)
-                            .foregroundStyle(Color.rrCoral)
-                    }
+            HStack(spacing: 7) {
+                if isSuggested && !isSelected {
+                    Circle().fill(Color.rrHighlight).frame(width: 7, height: 7)
                 }
                 Text(intent.title)
-                    .rrText(.headline)
-                    .foregroundStyle(Color.rrText)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(intent.blurb)
-                    .rrText(.caption)
-                    .foregroundStyle(Color.rrTextSecondary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .rrText(.callout)
+                    .lineLimit(1)
+                if isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .opacity(0.7)
+                }
             }
-            .padding(RRSpace.s)
-            .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+            .foregroundStyle(isSelected ? Color.rrButtonText : Color.rrText)
+            .padding(.horizontal, 15)
+            .frame(minHeight: 44)
             .background {
-                RoundedRectangle(cornerRadius: RRRadius.control, style: .continuous)
-                    .fill(isSelected ? Color.rrAccentSoft : Color.rrSurface)
+                Capsule().fill(isSelected ? Color.rrButtonFill : Color.clear)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: RRRadius.control, style: .continuous)
-                    .strokeBorder(isSelected ? Color.rrAccent.opacity(0.75) : Color.rrLine, lineWidth: 1)
+                Capsule().strokeBorder(isSelected ? Color.clear : Color.rrLineStrong, lineWidth: 1)
             }
-            .opacity(isLocked ? 0.72 : 1)
+            .opacity(isLocked ? 0.7 : 1)
+            .contentShape(Capsule())
         }
         .buttonStyle(.rrPress)
         .accessibilityLabel(intent.title)
-        .accessibilityValue(isLocked ? "Part of ReplyRight Pro" : (isSuggested ? "Suggested" : ""))
+        .accessibilityValue(isLocked ? "Part of ReplyRight Pro" : (isSuggested ? "Fits this conversation" : ""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("intent-\(intent.rawValue)")
     }

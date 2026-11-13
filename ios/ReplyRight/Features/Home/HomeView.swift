@@ -2,8 +2,9 @@ import PhotosUI
 import ReplyRightCore
 import ReplyRightUI
 import SwiftUI
+import UIKit
 
-/// The Home tab: where a conversation starts, and the flow it leads into.
+/// The Reply tab: where a conversation starts, and the flow it leads into.
 struct HomeTab: View {
     @Environment(AppModel.self) private var app
 
@@ -30,45 +31,55 @@ struct HomeTab: View {
     }
 }
 
-/// "What's happening with your crush?" Three ways to bring a conversation in,
-/// and shortcuts for the moments that don't start with one.
+/// The first screen: one question, one place to answer it, and a short menu
+/// of the other things ReplyRight is good for.
+///
+/// There is no dashboard here. You arrive, you say what they said, and you go.
 struct HomeView: View {
     @Environment(AppModel.self) private var app
+    @State private var draft = ""
+    @State private var person: CrushProfile?
     @State private var pickedPhotos: [PhotosPickerItem] = []
     @State private var isLoadingPhotos = false
     @State private var showsShareGuide = false
+    @State private var showsKeyboardSetup = false
+    @FocusState private var isWriting: Bool
 
     var body: some View {
-        ScreenScroll(spacing: RRSpace.xl) {
+        ScreenScroll(spacing: RRSpace.l) {
             topBar
 
-            ScreenHeader(
-                eyebrow: Microcopy.greeting(hour: Calendar.current.component(.hour, from: Date())),
-                lead: "What's happening with ",
-                emphasis: "your crush?",
-                subtitle: "Let's figure out what to say."
-            )
+            VStack(alignment: .leading, spacing: RRSpace.xs) {
+                Text(Microcopy.greeting(hour: Calendar.current.component(.hour, from: Date())))
+                    .rrText(.body)
+                    .foregroundStyle(Color.rrTextSecondary)
+                EditorialTitle("What did they say?", style: .hero)
+            }
+            .padding(.top, RRSpace.s)
 
             if let inbox = app.inbox {
-                InboxCard(item: inbox)
+                InboxNotice(item: inbox)
             }
 
-            if app.mode == .demo {
-                DemoBadge(detailed: true)
-            }
+            writingSurface
 
-            startCards
+            ConnectionNotice()
 
-            shortcuts
+            menu
 
-            if !app.settings.keyboardNudgeDismissed {
-                KeyboardNudge()
-            }
+            footer
         }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showsShareGuide) {
             ShareGuideSheet()
                 .preferredColorScheme(app.colorScheme)
+        }
+        .sheet(isPresented: $showsKeyboardSetup) {
+            NavigationStack {
+                KeyboardSetupView()
+            }
+            .environment(app)
+            .preferredColorScheme(app.colorScheme)
         }
         .onChange(of: pickedPhotos) { _, items in
             guard !items.isEmpty else { return }
@@ -79,91 +90,120 @@ struct HomeView: View {
     // MARK: Top bar
 
     private var topBar: some View {
-        HStack {
-            Text("ReplyRight")
-                .rrText(.titleSmall)
-                .foregroundStyle(Color.rrText)
+        HStack(alignment: .center) {
+            BrandLogo(height: 21)
             Spacer()
             Button {
-                if !app.isPro {
-                    app.paywall = .general
-                }
+                app.showsConnection = true
             } label: {
-                HStack(spacing: 6) {
-                    if app.isPro {
-                        Image(systemName: "sparkle")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    Text(allowanceText)
-                        .rrText(.caption)
-                }
-                .foregroundStyle(app.isPro ? Color.rrAccent : Color.rrTextSecondary)
-                .padding(.horizontal, RRSpace.s)
-                .frame(minHeight: 32)
-                .background {
-                    Capsule().fill(app.isPro ? Color.rrAccentSoft : Color.rrSurfaceRaised)
-                }
-                .overlay {
-                    Capsule().strokeBorder(Color.rrLine, lineWidth: 1)
-                }
+                ConnectionPill(app.connection)
             }
             .buttonStyle(.rrPress)
-            .accessibilityLabel(app.isPro ? "ReplyRight Pro" : "\(allowanceText). See plans")
+            .accessibilityIdentifier("home-connection")
         }
     }
 
-    private var allowanceText: String {
-        if app.isPro { return "Pro" }
-        guard let remaining = app.remainingGenerations else { return "Free plan" }
-        return Microcopy.allowance(remaining: remaining, isPro: false)
-    }
+    // MARK: Writing surface
 
-    // MARK: Start cards
-
-    private var startCards: some View {
-        VStack(spacing: RRSpace.s) {
-            PhotosPicker(
-                selection: $pickedPhotos,
-                maxSelectionCount: RequestLimits.maxImages,
-                matching: .images
-            ) {
-                StartCard(
-                    title: "Upload a screenshot",
-                    subtitle: isLoadingPhotos ? "Getting it ready…" : "The fastest way. I'll read the conversation for you.",
-                    systemImage: "photo.on.rectangle.angled",
-                    isProminent: true
-                )
-            }
-            .buttonStyle(.rrPress)
-            .accessibilityIdentifier("home-upload")
-
-            HStack(alignment: .top, spacing: RRSpace.s) {
-                Button {
-                    Haptics.tap()
-                    app.startCompose()
-                } label: {
-                    StartCard(
-                        title: "Paste a message",
-                        subtitle: "Copy what they said and drop it in.",
-                        systemImage: "doc.on.clipboard"
-                    )
+    /// The one filled surface on the screen: a place to put what they said.
+    private var writingSurface: some View {
+        VStack(alignment: .leading, spacing: RRSpace.s) {
+            ZStack(alignment: .topLeading) {
+                if draft.isEmpty {
+                    Text("Paste their message here, or the last few lines of the chat.")
+                        .rrText(.bodyLarge)
+                        .foregroundStyle(Color.rrTextTertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
                 }
-                .buttonStyle(.rrPress)
+                TextEditor(text: $draft)
+                    .rrText(.bodyLarge)
+                    .foregroundStyle(Color.rrText)
+                    .tint(Color.rrCursor)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 104, maxHeight: 220)
+                    .focused($isWriting)
+                    .accessibilityLabel("What they said")
+                    .accessibilityIdentifier("home-message")
+            }
+
+            HStack(spacing: RRSpace.xs) {
+                PhotosPicker(
+                    selection: $pickedPhotos,
+                    maxSelectionCount: RequestLimits.maxImages,
+                    matching: .images
+                ) {
+                    Label(isLoadingPhotos ? "Getting it ready…" : "Screenshot", systemImage: "photo")
+                }
+                .buttonStyle(.rrSecondaryCompact)
+                .accessibilityIdentifier("home-upload")
+
+                Button {
+                    pasteFromClipboard()
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                }
+                .buttonStyle(.rrSecondaryCompact)
                 .accessibilityIdentifier("home-paste")
 
-                Button {
-                    Haptics.tap()
-                    showsShareGuide = true
-                } label: {
-                    StartCard(
-                        title: "Share a conversation",
-                        subtitle: "Send it here from any app.",
-                        systemImage: "square.and.arrow.up"
-                    )
-                }
-                .buttonStyle(.rrPress)
+                Spacer(minLength: 0)
             }
+
+            if !app.people.isEmpty {
+                Menu {
+                    Button("No one in particular") { person = nil }
+                    ForEach(app.people) { candidate in
+                        Button(candidate.alias) {
+                            person = candidate
+                            app.settings.lastCrushID = candidate.id
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(person.map { "With \($0.alias)" } ?? "With no one in particular")
+                            .rrText(.callout)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.rrAccent)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Whose profile to use as context")
+            }
+
+            Button("Read it") {
+                readDraft()
+            }
+            .buttonStyle(.rrPrimary)
+            .disabled(draft.trimmed.count < 2)
+            .accessibilityIdentifier("home-read")
         }
+        .rrPanel()
+    }
+
+    private func readDraft() {
+        let text = draft.trimmed
+        guard text.count >= 2 else { return }
+        Haptics.tap()
+        isWriting = false
+        app.compose.reset()
+        app.compose.text = text
+        app.compose.crush = person
+        app.compose.startAnalysis(app: app)
+        app.homePath = [.understanding]
+        draft = ""
+    }
+
+    /// Reads the clipboard only because the user tapped Paste.
+    private func pasteFromClipboard() {
+        guard let copied = UIPasteboard.general.string?.trimmed, !copied.isEmpty else {
+            app.toast = "There's no text on the clipboard."
+            return
+        }
+        Haptics.tap()
+        draft = draft.trimmed.isEmpty ? copied : draft + "\n" + copied
     }
 
     private func loadPhotos(_ items: [PhotosPickerItem]) async {
@@ -183,121 +223,81 @@ struct HomeView: View {
             return
         }
         app.compose.reset()
+        app.compose.text = draft.trimmed
+        app.compose.crush = person
         await app.compose.addImages(loaded)
+        draft = ""
         app.homePath = [.input]
     }
 
-    // MARK: Shortcuts
+    // MARK: Menu
 
-    private var shortcuts: some View {
-        VStack(alignment: .leading, spacing: RRSpace.s) {
-            Eyebrow("Or start here")
-            VStack(spacing: 0) {
-                ShortcutRow(title: "Help me reply", subtitle: "They said something. Now what?", systemImage: "arrowshape.turn.up.left") {
-                    app.startCompose()
-                }
-                Divider().overlay(Color.rrLine)
-                ShortcutRow(title: "Start a conversation", subtitle: "An opener that isn't \u{201C}hey\u{201D}.", systemImage: "hand.wave") {
-                    app.homePath = [.starter(.opener)]
-                }
-                Divider().overlay(Color.rrLine)
-                ShortcutRow(title: "Make it more flirty", subtitle: "Bring a draft. We'll warm it up.", systemImage: "sparkles") {
-                    app.homePath = [.polish]
-                }
-                Divider().overlay(Color.rrLine)
-                ShortcutRow(title: "Help me ask them out", subtitle: "From chatting to an actual plan.", systemImage: "calendar.badge.plus") {
-                    app.homePath = [.starter(.askOut)]
-                }
-                Divider().overlay(Color.rrLine)
-                ShortcutRow(title: "I don't know what to say", subtitle: "Talk it through with your coach.", systemImage: "lightbulb") {
-                    app.askCoach(question: nil)
+    /// Everything else, as a short menu. Each line says what you get.
+    private var menu: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            menuButton("Start a conversation", detail: "An opener that isn't \u{201C}hey\u{201D}.", id: "home-starter") {
+                app.homePath = [.starter(.opener)]
+            }
+            menuButton("Polish something I wrote", detail: "Bring a draft. Keep what's you, fix the rest.", id: "home-polish") {
+                app.homePath = [.polish]
+            }
+            menuButton("Ask them out", detail: "From chatting to an actual plan.", id: "home-askout") {
+                app.homePath = [.starter(.askOut)]
+            }
+            menuButton("Talk it through", detail: "Not sure what to say? Your coach is here.", id: "home-coach") {
+                app.askCoach(question: nil)
+            }
+            menuButton("Share from another app", detail: "Send a screenshot or a message straight here.", id: "home-share") {
+                showsShareGuide = true
+            }
+            if !app.settings.keyboardNudgeDismissed {
+                menuButton("Use it where you type", detail: "Add the ReplyRight keyboard.", id: "home-keyboard") {
+                    showsKeyboardSetup = true
                 }
             }
-            .rrCard(padding: RRSpace.xs)
+            Rule()
         }
+    }
+
+    private func menuButton(_ title: String, detail: String, id: String, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            MenuRow(title, detail: detail)
+        }
+        .buttonStyle(.rrPress)
+        .accessibilityIdentifier(id)
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(allowanceText)
+                .rrText(.footnote)
+                .foregroundStyle(Color.rrTextTertiary)
+            Spacer()
+            if !app.isPro {
+                Button("See Pro") {
+                    app.paywall = .general
+                }
+                .buttonStyle(.rrQuiet)
+            }
+        }
+    }
+
+    private var allowanceText: String {
+        if app.isPro { return "ReplyRight Pro" }
+        guard let remaining = app.remainingGenerations else { return "Free plan" }
+        return Microcopy.allowance(remaining: remaining, isPro: false)
     }
 }
 
 // MARK: - Pieces
 
-/// One of the three ways in. The prominent one carries a small drawn conversation.
-private struct StartCard: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    var isProminent = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: RRSpace.s) {
-            HStack(alignment: .top) {
-                Image(systemName: systemImage)
-                    .font(.system(size: isProminent ? 22 : 18, weight: .medium))
-                    .foregroundStyle(Color.rrAccent)
-                    .frame(width: isProminent ? 48 : 40, height: isProminent ? 48 : 40)
-                    .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.rrAccentSoft)
-                    }
-                Spacer()
-                if isProminent {
-                    miniConversation
-                }
-            }
-            Spacer(minLength: 0)
-            Text(title)
-                .rrText(isProminent ? .title : .headline)
-                .foregroundStyle(Color.rrText)
-                .multilineTextAlignment(.leading)
-            Text(subtitle)
-                .rrText(.footnote)
-                .foregroundStyle(Color.rrTextSecondary)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, minHeight: isProminent ? 150 : 128, alignment: .topLeading)
-        .rrCard()
-        .contentShape(RoundedRectangle(cornerRadius: RRRadius.card, style: .continuous))
-    }
-
-    /// A few abstract bubbles: theirs, yours, theirs. Decoration only.
-    private var miniConversation: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            BubbleShape(side: .theirs, radius: 9)
-                .fill(Color.rrBubbleTheirs)
-                .frame(width: 74, height: 18)
-                .frame(width: 104, alignment: .leading)
-            BubbleShape(side: .mine, radius: 9)
-                .fill(LinearGradient.rrBubbleMine)
-                .frame(width: 58, height: 18)
-            BubbleShape(side: .theirs, radius: 9)
-                .fill(Color.rrBubbleTheirs)
-                .frame(width: 88, height: 18)
-                .frame(width: 104, alignment: .leading)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-private struct ShortcutRow: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button {
-            Haptics.tap()
-            action()
-        } label: {
-            NavigationRow(title: title, subtitle: subtitle, systemImage: systemImage)
-                .padding(.horizontal, RRSpace.s)
-                .padding(.vertical, RRSpace.xxs)
-        }
-        .buttonStyle(.rrPress)
-    }
-}
-
 /// Shown when something was shared to ReplyRight from another app.
-private struct InboxCard: View {
+private struct InboxNotice: View {
     @Environment(AppModel.self) private var app
     let item: SharedInboxItem
 
@@ -308,7 +308,7 @@ private struct InboxCard: View {
                 .rrText(.titleSmall)
                 .foregroundStyle(Color.rrText)
                 .lineLimit(3)
-            HStack(spacing: RRSpace.xs) {
+            HStack(spacing: RRSpace.s) {
                 Button("Pick it up") {
                     Haptics.tap()
                     app.openInbox()
@@ -321,10 +321,9 @@ private struct InboxCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .rrCard()
-        .overlay {
-            RoundedRectangle(cornerRadius: RRRadius.card, style: .continuous)
-                .strokeBorder(Color.rrAccent.opacity(0.5), lineWidth: 1)
+        .padding(RRSpace.m)
+        .background {
+            RoundedRectangle(cornerRadius: RRRadius.card, style: .continuous).fill(Color.rrAccentSoft)
         }
     }
 
@@ -337,49 +336,6 @@ private struct InboxCard: View {
     }
 }
 
-/// A gentle pointer to the keyboard. Dismissible, and never shown again once dismissed.
-private struct KeyboardNudge: View {
-    @Environment(AppModel.self) private var app
-    @State private var showsSetup = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: RRSpace.s) {
-            HStack(alignment: .top) {
-                Eyebrow("ReplyRight keyboard")
-                Spacer()
-                Button {
-                    app.settings.keyboardNudgeDismissed = true
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.rrTextTertiary)
-                        .frame(width: 32, height: 32)
-                }
-                .accessibilityLabel("Dismiss")
-            }
-            Text("Get suggestions right where you type.")
-                .rrText(.titleSmall)
-                .foregroundStyle(Color.rrText)
-            Text("Add the ReplyRight keyboard and rewrite a draft or pull up replies without leaving the chat.")
-                .rrText(.footnote)
-                .foregroundStyle(Color.rrTextSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Set it up") {
-                showsSetup = true
-            }
-            .buttonStyle(.rrSecondaryCompact)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .rrCard()
-        .sheet(isPresented: $showsSetup) {
-            NavigationStack {
-                KeyboardSetupView()
-            }
-            .preferredColorScheme(app.colorScheme)
-        }
-    }
-}
-
 /// Explains the two honest ways to bring a conversation in from another app.
 struct ShareGuideSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -389,7 +345,7 @@ struct ShareGuideSheet: View {
             ScreenScroll {
                 ScreenHeader(
                     lead: "Send it over ",
-                    emphasis: "from any app.",
+                    emphasis: "from any app",
                     subtitle: "ReplyRight can't see your chats, and it never will. You choose what to share, every time."
                 )
 
@@ -432,7 +388,7 @@ struct GuideStep: View {
         HStack(alignment: .top, spacing: RRSpace.m) {
             Text(number)
                 .rrText(.titleSmall)
-                .foregroundStyle(Color.rrCoral)
+                .foregroundStyle(Color.rrHighlightInk)
                 .frame(width: 28, alignment: .leading)
             VStack(alignment: .leading, spacing: RRSpace.xxs) {
                 Text(title)

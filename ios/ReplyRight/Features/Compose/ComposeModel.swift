@@ -54,6 +54,8 @@ final class ComposeModel {
     var refiningID: UUID?
     var refineNotice: String?
     var savedSessionID: UUID?
+    /// The typed error behind a failed state, so the screen can offer the right way forward.
+    var failure: APIError?
 
     @ObservationIgnored private var seen: [String] = []
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -98,6 +100,7 @@ final class ComposeModel {
         refiningID = nil
         refineNotice = nil
         savedSessionID = nil
+        failure = nil
         seen = []
     }
 
@@ -160,6 +163,7 @@ final class ComposeModel {
         resetReplies()
         analysis = nil
         transcript = []
+        failure = nil
         analysisState = .loading
 
         let request = AnalyzeRequest(conversation: text, crush: crush?.payload)
@@ -180,8 +184,10 @@ final class ComposeModel {
                 self.analysisState = .loaded
             } catch let error as APIError {
                 guard let self, !Task.isCancelled, error != .cancelled else { return }
+                self.failure = error
                 self.analysisState = .failed(app.present(error))
             } catch {
+                self?.failure = nil
                 self?.analysisState = .failed("Something went wrong. Please try again.")
             }
         }
@@ -203,6 +209,7 @@ final class ComposeModel {
         options = []
         refineNotice = nil
         savedSessionID = nil
+        failure = nil
         repliesState = .loading
 
         // Once the conversation has been read, only its text is sent. Screenshots are needed
@@ -236,8 +243,10 @@ final class ComposeModel {
                 }
             } catch let error as APIError {
                 guard let self, !Task.isCancelled, error != .cancelled else { return }
+                self.failure = error
                 self.repliesState = .failed(app.present(error))
             } catch {
+                self?.failure = nil
                 self?.repliesState = .failed("Something went wrong. Please try again.")
             }
         }

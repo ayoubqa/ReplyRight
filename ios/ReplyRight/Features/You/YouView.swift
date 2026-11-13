@@ -23,9 +23,10 @@ struct YouView: View {
 
         ScreenScroll {
             ScreenHeader(
-                lead: "All about ",
-                emphasis: "you."
+                lead: "All about you",
+                emphasis: ""
             )
+            .padding(.top, RRSpace.l)
 
             planCard
 
@@ -61,9 +62,20 @@ struct YouView: View {
                     NavigationRow(title: "Privacy Center", subtitle: "What's sent, what's stored, and how to delete it.", systemImage: "lock.shield")
                 }
                 .accessibilityIdentifier("you-privacy")
+                rowDivider
+                Button {
+                    app.showsConnection = true
+                } label: {
+                    NavigationRow(
+                        title: "Connection",
+                        subtitle: app.connection.title,
+                        systemImage: "antenna.radiowaves.left.and.right"
+                    )
+                }
+                .accessibilityIdentifier("you-connection")
             }
             .buttonStyle(.rrPress)
-            .rrCard(padding: RRSpace.s)
+            .rrCard(padding: RRSpace.xs)
 
             VStack(alignment: .leading, spacing: RRSpace.m) {
                 ChoiceGroup(
@@ -101,17 +113,7 @@ struct YouView: View {
                 }
             }
             .buttonStyle(.rrPress)
-            .rrCard(padding: RRSpace.s)
-
-            #if DEBUG
-            NavigationLink {
-                DeveloperView()
-            } label: {
-                NavigationRow(title: "Developer", subtitle: app.apiBaseURL.absoluteString, systemImage: "hammer")
-            }
-            .buttonStyle(.rrPress)
-            .rrCard(padding: RRSpace.s)
-            #endif
+            .rrCard(padding: RRSpace.xs)
 
             Text("ReplyRight \(AppConfig.appVersion) (\(AppConfig.buildNumber))\nSay it better. Be yourself.")
                 .rrText(.caption)
@@ -124,7 +126,7 @@ struct YouView: View {
     }
 
     private var rowDivider: some View {
-        Divider().overlay(Color.rrLine)
+        Rule()
     }
 
     // MARK: Plan
@@ -193,60 +195,3 @@ struct YouView: View {
         }
     }
 }
-
-#if DEBUG
-/// Development builds only: point the app at a different backend.
-struct DeveloperView: View {
-    @Environment(AppModel.self) private var app
-    @State private var address = ""
-
-    var body: some View {
-        ScreenScroll {
-            ScreenHeader(
-                lead: "Developer ",
-                emphasis: "settings.",
-                subtitle: "Only in debug builds. The keyboard and share sheet use the same address."
-            )
-
-            VStack(alignment: .leading, spacing: RRSpace.s) {
-                Eyebrow("Backend address")
-                RRField(AppConfig.defaultAPIBaseURL.absoluteString, text: $address)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                Text("Leave empty for the build default. On a real iPhone use your Mac's name, such as http://my-mac.local:3000.")
-                    .rrText(.caption)
-                    .foregroundStyle(Color.rrTextTertiary)
-                HStack(spacing: RRSpace.xs) {
-                    Button("Save and check") {
-                        app.settings.apiBaseURLOverride = address.trimmed.isEmpty ? nil : address.trimmed
-                        Task {
-                            await app.refresh(force: true)
-                            app.toast = app.mode == nil ? "No response from that address." : "Connected (\(app.mode == .demo ? "demo mode" : "live AI"))."
-                        }
-                    }
-                    .buttonStyle(.rrSecondaryCompact)
-                }
-            }
-            .rrCard()
-
-            VStack(alignment: .leading, spacing: RRSpace.xs) {
-                Eyebrow("State")
-                Text("Mode: \(app.mode?.rawValue ?? "unknown")")
-                Text("Tier (StoreKit): \(app.tier.rawValue)")
-                Text("Tier (server): \(app.usage?.tier.rawValue ?? "unknown")")
-                Text("App Group available: \(AppGroup.isAvailable ? "yes" : "no")")
-            }
-            .rrText(.footnote)
-            .foregroundStyle(Color.rrTextSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .rrCard()
-        }
-        .navigationTitle("Developer")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            address = app.settings.apiBaseURLOverride ?? ""
-        }
-    }
-}
-#endif

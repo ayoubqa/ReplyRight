@@ -2,8 +2,8 @@ import ReplyRightCore
 import ReplyRightUI
 import SwiftUI
 
-/// Step three: three genuinely different ways to say it.
-/// The user edits, tweaks, copies and sends. ReplyRight never sends anything.
+/// Step three: three genuinely different ways to say it, each with its reason.
+/// The user adjusts, edits, copies and sends. ReplyRight never sends anything.
 struct RepliesView: View {
     @Environment(AppModel.self) private var app
 
@@ -17,7 +17,7 @@ struct RepliesView: View {
                     .padding(.top, RRSpace.xl)
 
             case .failed(let message):
-                ErrorNote(message) {
+                FailureNote(error: compose.failure, message: message) {
                     compose.startReplies(app: app)
                 }
                 .padding(.top, RRSpace.l)
@@ -25,9 +25,6 @@ struct RepliesView: View {
             case .loaded:
                 header
 
-                if compose.mode == .demo {
-                    DemoBadge(detailed: true)
-                }
                 if let headsUp = compose.headsUp, !headsUp.isEmpty {
                     HeadsUpNote(headsUp)
                 }
@@ -35,16 +32,20 @@ struct RepliesView: View {
                 if compose.options.isEmpty {
                     noOptions
                 } else {
-                    ForEach($compose.options) { $option in
-                        ReplyCard(
-                            option: $option,
-                            isDemo: compose.mode == .demo,
-                            isRefining: compose.refiningID == option.id,
-                            intent: compose.intent,
-                            onRefine: { action in
-                                compose.refine(optionID: option.id, action: action, app: app)
-                            }
-                        )
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach($compose.options) { $option in
+                            ReplyCard(
+                                option: $option,
+                                isDemo: compose.mode == .demo,
+                                isRefining: compose.refiningID == option.id,
+                                intent: compose.intent,
+                                crushID: compose.crush?.id,
+                                onRefine: { action in
+                                    compose.refine(optionID: option.id, action: action, app: app)
+                                }
+                            )
+                        }
+                        Rule()
                     }
 
                     if let notice = compose.refineNotice, !notice.isEmpty {
@@ -68,20 +69,25 @@ struct RepliesView: View {
                     } label: {
                         Image(systemName: compose.savedSessionID == nil ? "bookmark" : "bookmark.fill")
                     }
-                    .accessibilityLabel(compose.savedSessionID == nil ? "Save this session" : "Session saved")
+                    .accessibilityLabel(compose.savedSessionID == nil ? "Save this conversation" : "Conversation saved")
                 }
             }
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: RRSpace.s) {
+        VStack(alignment: .leading, spacing: RRSpace.xs) {
             Eyebrow(app.compose.intent.title)
-            Text(app.compose.note.isEmpty ? "Here are a few ways to say it." : app.compose.note)
+            Text(app.compose.note.isEmpty ? "Here are three ways to say it." : app.compose.note)
                 .rrText(.title)
                 .foregroundStyle(Color.rrText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
+            if let mode = app.compose.mode {
+                ProvenanceLabel(mode)
+                    .padding(.top, RRSpace.xxs)
+                    .accessibilityIdentifier("replies-provenance")
+            }
         }
     }
 
@@ -94,13 +100,13 @@ struct RepliesView: View {
                 .rrText(.callout)
                 .foregroundStyle(Color.rrTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: RRSpace.xs) {
+            HStack(spacing: RRSpace.s) {
                 Button("Change the goal") {
                     app.homePath.removeLast()
                 }
                 .buttonStyle(.rrSecondaryCompact)
                 Button("Talk to the coach") {
-                    app.askCoach(conversation: app.compose.conversationText)
+                    app.askCoach(conversation: app.compose.conversationText, crushID: app.compose.crush?.id)
                 }
                 .buttonStyle(.rrQuiet)
             }
@@ -130,6 +136,7 @@ struct RepliesView: View {
             }
 
             VStack(spacing: 0) {
+                Rule()
                 Button {
                     app.handToKeyboard(app.compose.conversationText, crush: app.compose.crush)
                 } label: {
@@ -140,19 +147,36 @@ struct RepliesView: View {
                     )
                 }
                 .buttonStyle(.rrPress)
-                Divider().overlay(Color.rrLine)
+                Rule()
                 Button {
-                    app.askCoach(question: nil, conversation: app.compose.conversationText)
+                    app.askCoach(
+                        question: nil,
+                        conversation: app.compose.conversationText,
+                        crushID: app.compose.crush?.id
+                    )
                 } label: {
                     NavigationRow(
                         title: "Ask the coach about this",
                         subtitle: "Not sure which to send, or what comes after?",
-                        systemImage: "lightbulb"
+                        systemImage: "graduationcap"
                     )
                 }
                 .buttonStyle(.rrPress)
+                if let person = app.compose.crush, let read = app.compose.analysis?.read, !read.isEmpty {
+                    Rule()
+                    Button {
+                        keepSummary(read, for: person)
+                    } label: {
+                        NavigationRow(
+                            title: "Keep this read in \(person.alias)'s notes",
+                            subtitle: "A one-line summary of this conversation, saved on your iPhone.",
+                            systemImage: "book.closed"
+                        )
+                    }
+                    .buttonStyle(.rrPress)
+                }
+                Rule()
             }
-            .rrCard(padding: RRSpace.s)
 
             Text("Send what feels true to you. These are options, not scripts.")
                 .rrText(.note)
@@ -160,17 +184,36 @@ struct RepliesView: View {
         }
         .padding(.top, RRSpace.xs)
     }
+
+    /// Adds ReplyRight's read of this conversation to the person's profile. Only on an explicit tap.
+    private func keepSummary(_ read: String, for person: CrushProfile) {
+        guard var stored = app.person(person.id) else { return }
+        guard !stored.summaries.contains(where: { $0.text == read.trimmed }) else {
+            app.toast = "Already in \(person.alias)'s notes."
+            return
+        }
+        stored.addSummary(read, source: .conversation)
+        app.savePerson(stored)
+        app.compose.crush = stored
+        Haptics.success()
+        app.toast = "Kept in \(person.alias)'s notes."
+    }
 }
 
-// MARK: - Reply card
+// MARK: - One reply
 
-/// One suggestion: the message as a bubble, why it could work, and everything the user can do with it.
+/// One suggestion: the approach it takes, the message as it would be sent, why
+/// it could work, and everything the user can do with it.
+///
+/// It is a section on the page, not a card. The only shape is the bubble,
+/// because the only message is the message.
 struct ReplyCard: View {
     @Environment(AppModel.self) private var app
     @Binding var option: ReplyOption
     var isDemo = false
     var isRefining = false
     var intent: Intent? = nil
+    var crushID: UUID? = nil
     var showsRefine = true
     let onRefine: (RefineAction) -> Void
 
@@ -180,35 +223,34 @@ struct ReplyCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: RRSpace.s) {
-            HStack(spacing: RRSpace.xs) {
+            HStack(alignment: .center, spacing: RRSpace.xs) {
                 Text(option.style)
-                    .rrText(.eyebrow)
+                    .rrText(.headline)
                     .foregroundStyle(Color.rrAccent)
-                if isDemo {
-                    DemoBadge()
-                }
-                Spacer()
                 if option.isEdited {
-                    Text("Edited")
-                        .rrText(.caption)
+                    Text("edited by you")
+                        .rrText(.footnote)
                         .foregroundStyle(Color.rrTextTertiary)
                 }
+                Spacer()
                 Button {
-                    app.toggleSaved(text: option.text, style: option.style, intent: intent)
+                    app.toggleSaved(text: option.text, style: option.style, intent: intent, crushID: crushID)
                 } label: {
                     Image(systemName: app.isSaved(option.text.trimmed) ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 16, weight: .regular))
                         .foregroundStyle(app.isSaved(option.text.trimmed) ? Color.rrAccent : Color.rrTextTertiary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(app.isSaved(option.text.trimmed) ? "Remove from saved" : "Save this reply")
             }
 
             message
-                .opacity(isRefining ? 0.45 : 1)
-                .overlay(alignment: .center) {
+                .opacity(isRefining ? 0.4 : 1)
+                .overlay(alignment: .trailing) {
                     if isRefining {
-                        TypingDots().foregroundStyle(Color.rrText)
+                        BrandMark(size: 34, isWriting: true)
+                            .padding(.trailing, RRSpace.m)
                     }
                 }
 
@@ -220,11 +262,11 @@ struct ReplyCard: View {
 
             if showsTweaks && showsRefine {
                 tweaks
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .rrCard()
+        .rrCard(padding: RRSpace.m)
         .animation(.rrSnappy, value: showsTweaks)
         .animation(.rrSnappy, value: isEditing)
         .accessibilityElement(children: .contain)
@@ -238,20 +280,19 @@ struct ReplyCard: View {
                 .lineLimit(1...8)
                 .rrText(.message)
                 .foregroundStyle(Color.rrText)
+                .tint(Color.rrCursor)
                 .focused($editorFocused)
                 .padding(.horizontal, RRSpace.m)
                 .padding(.vertical, RRSpace.s)
                 .background {
-                    RoundedRectangle(cornerRadius: RRRadius.control, style: .continuous).fill(Color.rrSurfaceRaised)
+                    BubbleShape(side: .mine).fill(Color.rrSurface)
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: RRRadius.control, style: .continuous)
-                        .strokeBorder(Color.rrAccent.opacity(0.7), lineWidth: 1)
+                    BubbleShape(side: .mine).stroke(Color.rrAccent, lineWidth: 1.5)
                 }
                 .accessibilityIdentifier("reply-editor")
         } else {
             MessageBubble(option.text.isEmpty ? " " : option.text, side: .mine)
-                .padding(.leading, -44)
                 .onTapGesture(count: 2) {
                     beginEditing()
                 }
@@ -259,14 +300,14 @@ struct ReplyCard: View {
     }
 
     private var actions: some View {
-        HStack(spacing: RRSpace.xs) {
+        HStack(spacing: RRSpace.s) {
             Button {
                 isEditing = false
                 app.copy(option.text, original: option.isEdited ? option.originalText : nil)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
-            .buttonStyle(RRPrimaryButtonStyle(fullWidth: false))
+            .buttonStyle(.rrSecondaryCompact)
             .disabled(option.text.trimmed.isEmpty || isRefining)
             .accessibilityIdentifier("reply-copy")
 
@@ -278,19 +319,26 @@ struct ReplyCard: View {
                     beginEditing()
                 }
             }
-            .buttonStyle(.rrSecondaryCompact)
+            .buttonStyle(.rrQuiet)
             .accessibilityIdentifier("reply-edit")
 
             if showsRefine {
-                Button {
+                Button(showsTweaks ? "Hide" : "Adjust") {
                     showsTweaks.toggle()
                     Haptics.tap()
-                } label: {
-                    Label("Tweak", systemImage: "wand.and.stars")
                 }
-                .buttonStyle(.rrSecondaryCompact)
+                .buttonStyle(.rrQuiet)
                 .disabled(isRefining)
                 .accessibilityIdentifier("reply-tweak")
+            }
+
+            if !option.text.trimmed.isEmpty {
+                // Opens the system share sheet. The user picks the app and sends it themselves.
+                ShareLink(item: option.text.trimmed) {
+                    Text("Send\u{2026}")
+                }
+                .buttonStyle(.rrQuiet)
+                .accessibilityLabel("Send with another app")
             }
 
             Spacer(minLength: 0)
@@ -302,24 +350,27 @@ struct ReplyCard: View {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Color.rrTextSecondary)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Undo")
             }
         }
     }
 
+    /// The ways to adjust this one reply. Each keeps the meaning and changes the delivery.
     private var tweaks: some View {
         VStack(alignment: .leading, spacing: RRSpace.xs) {
             FlowLayout {
                 ForEach(RefineAction.cardActions) { action in
-                    RRChip(action.title, systemImage: action.symbol) {
+                    RRChip(action.tweakTitle) {
                         isEditing = false
                         onRefine(action)
                     }
+                    .accessibilityIdentifier("tweak-\(action.rawValue)")
                 }
             }
-            Text("Each tweak uses one of today's replies.")
+            Text("Each adjustment uses one of today's replies.")
                 .rrText(.caption)
                 .foregroundStyle(Color.rrTextTertiary)
         }
@@ -331,7 +382,7 @@ struct ReplyCard: View {
         Haptics.tap()
     }
 
-    /// Steps back: first undoes hand edits, then earlier versions from tweaks.
+    /// Steps back: first undoes hand edits, then earlier versions from adjustments.
     private func undo() {
         if option.isEdited {
             option.text = option.originalText
@@ -358,7 +409,7 @@ private struct LearnFromEditsPrompt: View {
                     .rrText(.callout)
                     .foregroundStyle(Color.rrTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: RRSpace.xs) {
+                HStack(spacing: RRSpace.s) {
                     Button("Yes, learn from my edits") {
                         var settings = app.settings
                         settings.learnFromEdits = true
@@ -374,7 +425,10 @@ private struct LearnFromEditsPrompt: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .rrCard()
+            .padding(RRSpace.m)
+            .background {
+                RoundedRectangle(cornerRadius: RRRadius.card, style: .continuous).fill(Color.rrSurface)
+            }
             .transition(.opacity)
         }
     }

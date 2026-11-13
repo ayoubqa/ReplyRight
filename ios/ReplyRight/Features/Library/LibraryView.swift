@@ -5,167 +5,308 @@ import SwiftUI
 struct LibraryTab: View {
     var body: some View {
         NavigationStack {
-            LibraryView()
+            NotebookView()
         }
     }
 }
 
-/// Replies and sessions the user chose to keep. Nothing lands here automatically.
-struct LibraryView: View {
+/// The notebook: the people the user is talking to, the lines worth keeping
+/// and the conversations they chose to save.
+///
+/// Nothing lands here automatically, and nothing here leaves the iPhone
+/// unless the user picks it as context for a reply.
+struct NotebookView: View {
     @Environment(AppModel.self) private var app
-
-    enum Shelf: String, CaseIterable, Identifiable {
-        case replies = "Replies"
-        case sessions = "Sessions"
-        var id: String { rawValue }
-    }
-
-    @State private var section: Shelf = .replies
+    @State private var isAdding = false
 
     var body: some View {
-        ScreenScroll {
-            ScreenHeader(
-                lead: "Worth ",
-                emphasis: "keeping.",
-                subtitle: "Lines you liked and conversations you saved. Saved replies are in your ReplyRight keyboard too."
-            )
-
-            Picker("Show", selection: $section) {
-                ForEach(Shelf.allCases) { item in
-                    Text(item.rawValue).tag(item)
-                }
+        ScreenScroll(spacing: RRSpace.l) {
+            VStack(alignment: .leading, spacing: RRSpace.xs) {
+                EditorialTitle("Your notebook", style: .display)
+                Text("Who you're talking to, lines worth keeping, and conversations you saved. It all stays on this iPhone.")
+                    .rrText(.body)
+                    .foregroundStyle(Color.rrTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.segmented)
+            .padding(.top, RRSpace.l)
 
-            switch section {
-            case .replies:
-                replies
-            case .sessions:
-                sessions
+            people
+
+            VStack(alignment: .leading, spacing: 0) {
+                NavigationLink {
+                    SavedRepliesView()
+                } label: {
+                    MenuRow(
+                        "Lines worth keeping",
+                        detail: app.savedReplies.isEmpty
+                            ? "Bookmark a reply and it waits for you here, and in your keyboard."
+                            : "Saved replies, ready in your keyboard too.",
+                        trailing: app.savedReplies.isEmpty ? nil : "\(app.savedReplies.count)"
+                    )
+                }
+                .buttonStyle(.rrPress)
+                .accessibilityIdentifier("notebook-replies")
+
+                NavigationLink {
+                    SessionsView()
+                } label: {
+                    MenuRow(
+                        "Saved conversations",
+                        detail: "Text only, never screenshots. Kept only when you save one.",
+                        trailing: app.sessions.isEmpty ? nil : "\(app.sessions.count)"
+                    )
+                }
+                .buttonStyle(.rrPress)
+                .accessibilityIdentifier("notebook-sessions")
+                Rule()
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-    }
-
-    @ViewBuilder
-    private var replies: some View {
-        if app.savedReplies.isEmpty {
-            EmptyLibrary(
-                title: "Nothing saved yet.",
-                detail: "When a suggestion sounds exactly right, tap the bookmark and it'll wait for you here.",
-                actionTitle: "Write a reply"
-            ) {
-                app.startCompose()
+        .sheet(isPresented: $isAdding) {
+            PersonEditor(person: nil) { created in
+                app.savePerson(created)
             }
-        } else {
-            ForEach(app.savedReplies) { reply in
-                VStack(alignment: .leading, spacing: RRSpace.s) {
-                    HStack {
-                        Text(reply.style)
-                            .rrText(.eyebrow)
-                            .foregroundStyle(Color.rrAccent)
-                        Spacer()
-                        Text(reply.createdAt, format: .dateTime.day().month(.abbreviated))
-                            .rrText(.caption)
-                            .foregroundStyle(Color.rrTextTertiary)
-                    }
-                    MessageBubble(reply.text, side: .mine)
-                        .padding(.leading, -44)
-                    HStack(spacing: RRSpace.xs) {
-                        Button {
-                            app.copy(reply.text)
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                        .buttonStyle(.rrSecondaryCompact)
-                        Spacer()
-                        Button {
-                            withAnimation(.rrSnappy) {
-                                app.savedReplies.removeAll { $0.id == reply.id }
-                            }
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(Color.rrTextTertiary)
-                                .frame(width: 40, height: 40)
-                        }
-                        .accessibilityLabel("Delete saved reply")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .rrCard()
-            }
+            .environment(app)
+            .preferredColorScheme(app.colorScheme)
         }
     }
 
-    @ViewBuilder
-    private var sessions: some View {
-        if app.sessions.isEmpty {
-            EmptyLibrary(
-                title: "No saved sessions.",
-                detail: "Conversations are never kept unless you save one with the bookmark on the replies screen. Saved sessions hold text only, never screenshots.",
-                actionTitle: "Start one"
-            ) {
-                app.startCompose()
-            }
-        } else {
-            ForEach(app.sessions) { session in
-                NavigationLink {
-                    SessionDetailView(sessionID: session.id)
-                } label: {
-                    VStack(alignment: .leading, spacing: RRSpace.xs) {
-                        HStack {
-                            Text(session.intent.title)
-                                .rrText(.eyebrow)
-                                .foregroundStyle(Color.rrAccent)
-                            Spacer()
-                            Text(session.createdAt, format: .dateTime.day().month(.abbreviated))
-                                .rrText(.caption)
-                                .foregroundStyle(Color.rrTextTertiary)
-                        }
-                        Text(session.title)
-                            .rrText(.titleSmall)
-                            .foregroundStyle(Color.rrText)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(2)
-                        Text("\(session.options.count) replies saved")
-                            .rrText(.footnote)
-                            .foregroundStyle(Color.rrTextSecondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .rrCard()
+    private var people: some View {
+        VStack(alignment: .leading, spacing: RRSpace.s) {
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow("People")
+                Button("Add someone") {
+                    isAdding = true
                 }
-                .buttonStyle(.rrPress)
+                .buttonStyle(.rrQuiet)
+                .fixedSize()
+                .accessibilityIdentifier("notebook-add-person")
+            }
+
+            if app.people.isEmpty {
+                EmptyNote(
+                    "No one here yet",
+                    message: "Add someone you're talking to and keep what matters in one place: where you met, what they're into, the thing they told you about Friday. You choose what ReplyRight may use."
+                )
+            } else {
+                PeopleList()
             }
         }
     }
 }
 
-private struct EmptyLibrary: View {
-    let title: String
-    let detail: String
-    let actionTitle: String
-    let action: () -> Void
+/// The people in the notebook, each opening its own page.
+struct PeopleList: View {
+    @Environment(AppModel.self) private var app
 
     var body: some View {
-        VStack(alignment: .leading, spacing: RRSpace.s) {
-            Text(title)
-                .rrText(.titleSmall)
-                .foregroundStyle(Color.rrText)
-            Text(detail)
-                .rrText(.callout)
-                .foregroundStyle(Color.rrTextSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(actionTitle, action: action)
-                .buttonStyle(.rrSecondaryCompact)
-                .padding(.top, RRSpace.xxs)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(app.people) { person in
+                NavigationLink {
+                    PersonDetailView(personID: person.id)
+                } label: {
+                    PersonRow(person: person)
+                }
+                .buttonStyle(.rrPress)
+                .accessibilityIdentifier("person-\(person.alias)")
+            }
+            Rule()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .rrCard(padding: RRSpace.l)
     }
 }
 
-/// A saved session: the conversation as text, the read, and the replies that were kept.
+struct PersonRow: View {
+    let person: CrushProfile
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RRSpace.s) {
+            PersonAvatar(person: person, size: 48)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(person.alias)
+                    .rrText(.menu)
+                    .foregroundStyle(Color.rrText)
+                    .lineLimit(1)
+                Text(person.subtitle)
+                    .rrText(.footnote)
+                    .foregroundStyle(Color.rrTextSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: RRSpace.xs)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.rrTextTertiary)
+        }
+        .padding(.vertical, RRSpace.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rule() }
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Saved replies
+
+/// Replies the user bookmarked. Pass a person to see only the ones written for them.
+struct SavedRepliesView: View {
+    @Environment(AppModel.self) private var app
+    var personID: UUID? = nil
+
+    private var replies: [SavedReply] {
+        guard let personID else { return app.savedReplies }
+        return app.savedReplies(for: personID)
+    }
+
+    var body: some View {
+        ScreenScroll(spacing: RRSpace.m) {
+            if replies.isEmpty {
+                EmptyNote(
+                    "Nothing saved yet",
+                    message: "When a suggestion sounds exactly right, tap the bookmark. It waits for you here and in your ReplyRight keyboard."
+                )
+                Button("Write a reply") {
+                    app.startCompose()
+                }
+                .buttonStyle(.rrSecondaryCompact)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(replies) { reply in
+                        SavedReplyRow(reply: reply, showsPerson: personID == nil)
+                    }
+                    Rule()
+                }
+            }
+        }
+        .navigationTitle("Lines worth keeping")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct SavedReplyRow: View {
+    @Environment(AppModel.self) private var app
+    let reply: SavedReply
+    var showsPerson = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RRSpace.xs) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(caption)
+                    .rrText(.footnote)
+                    .foregroundStyle(Color.rrTextSecondary)
+                Spacer()
+                Text(reply.createdAt, format: .dateTime.day().month(.abbreviated))
+                    .rrText(.caption)
+                    .foregroundStyle(Color.rrTextTertiary)
+            }
+            MessageBubble(reply.text, side: .mine)
+            HStack(spacing: RRSpace.s) {
+                Button {
+                    app.copy(reply.text)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.rrSecondaryCompact)
+                Spacer()
+                Button {
+                    withAnimation(.rrSnappy) {
+                        app.savedReplies.removeAll { $0.id == reply.id }
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(Color.rrTextTertiary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Delete saved reply")
+            }
+        }
+        .padding(.vertical, RRSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rule() }
+    }
+
+    private var caption: String {
+        if showsPerson, let person = app.person(reply.crushID) {
+            return "\(reply.style), for \(person.alias)"
+        }
+        return reply.style
+    }
+}
+
+// MARK: - Saved conversations
+
+struct SessionsView: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        ScreenScroll(spacing: RRSpace.m) {
+            if app.sessions.isEmpty {
+                EmptyNote(
+                    "No saved conversations",
+                    message: "A conversation is kept only when you save it with the bookmark on the replies screen. Saved conversations hold text, never screenshots."
+                )
+                Button("Start one") {
+                    app.startCompose()
+                }
+                .buttonStyle(.rrSecondaryCompact)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(app.sessions) { session in
+                        NavigationLink {
+                            SessionDetailView(sessionID: session.id)
+                        } label: {
+                            SessionRow(session: session)
+                        }
+                        .buttonStyle(.rrPress)
+                    }
+                    Rule()
+                }
+            }
+        }
+        .navigationTitle("Saved conversations")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct SessionRow: View {
+    @Environment(AppModel.self) private var app
+    let session: SavedSession
+    var showsPerson = true
+
+    var body: some View {
+        HStack(alignment: .center, spacing: RRSpace.s) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.title)
+                    .rrText(.headline)
+                    .foregroundStyle(Color.rrText)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                Text(caption)
+                    .rrText(.footnote)
+                    .foregroundStyle(Color.rrTextSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: RRSpace.xs)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.rrTextTertiary)
+        }
+        .padding(.vertical, RRSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rule() }
+        .contentShape(Rectangle())
+    }
+
+    private var caption: String {
+        let date = session.createdAt.formatted(.dateTime.day().month(.abbreviated))
+        let count = session.options.count == 1 ? "1 reply" : "\(session.options.count) replies"
+        if showsPerson, let person = app.person(session.crushID) {
+            return "\(date), with \(person.alias), \(count)"
+        }
+        return "\(date), \(count)"
+    }
+}
+
+/// A saved conversation: the text, the read, and the replies that were kept.
 struct SessionDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -174,24 +315,21 @@ struct SessionDetailView: View {
     var body: some View {
         ScreenScroll {
             if let session = app.sessions.first(where: { $0.id == sessionID }) {
-                ScreenHeader(
-                    eyebrow: session.intent.title,
-                    lead: session.title,
-                    emphasis: "",
-                    style: .title
-                )
-
-                if let person = app.person(session.crushID) {
-                    Label("With \(person.alias)", systemImage: "person")
-                        .rrText(.footnote)
-                        .foregroundStyle(Color.rrTextSecondary)
+                VStack(alignment: .leading, spacing: RRSpace.xs) {
+                    Eyebrow(session.intent.title)
+                    EditorialTitle(session.title, style: .title)
+                    if let person = app.person(session.crushID) {
+                        Text("With \(person.alias)")
+                            .rrText(.footnote)
+                            .foregroundStyle(Color.rrTextSecondary)
+                    }
                 }
 
                 if !session.read.isEmpty {
                     MarginNote(session.read)
                 }
 
-                VStack(alignment: .leading, spacing: RRSpace.s) {
+                VStack(alignment: .leading, spacing: RRSpace.xs) {
                     Eyebrow("The conversation")
                     Text(session.conversation)
                         .rrText(.callout)
@@ -199,29 +337,28 @@ struct SessionDetailView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .rrCard()
 
-                Eyebrow("Replies")
-                ForEach(session.options) { option in
-                    VStack(alignment: .leading, spacing: RRSpace.s) {
-                        Text(option.style)
-                            .rrText(.eyebrow)
-                            .foregroundStyle(Color.rrAccent)
-                        MessageBubble(option.text, side: .mine)
-                            .padding(.leading, -44)
-                        if !option.why.isEmpty {
-                            MarginNote(option.why)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(session.options) { option in
+                        VStack(alignment: .leading, spacing: RRSpace.xs) {
+                            Text(option.style)
+                                .rrText(.headline)
+                                .foregroundStyle(Color.rrAccent)
+                            MessageBubble(option.text, side: .mine)
+                            if !option.why.isEmpty {
+                                MarginNote(option.why)
+                            }
+                            Button {
+                                app.copy(option.text)
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                            .buttonStyle(.rrSecondaryCompact)
                         }
-                        Button {
-                            app.copy(option.text)
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                        .buttonStyle(.rrSecondaryCompact)
+                        .rrCard(padding: RRSpace.m)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .rrCard()
+                    Rule()
                 }
 
                 Button("Write new replies for this") {
@@ -229,13 +366,13 @@ struct SessionDetailView: View {
                 }
                 .buttonStyle(.rrPrimary)
 
-                Button("Delete this session", role: .destructive) {
+                Button("Delete this conversation", role: .destructive) {
                     app.sessions.removeAll { $0.id == sessionID }
                     dismiss()
                 }
                 .buttonStyle(.rrQuiet)
             } else {
-                Text("This session is no longer saved.")
+                Text("This conversation is no longer saved.")
                     .rrText(.callout)
                     .foregroundStyle(Color.rrTextSecondary)
             }

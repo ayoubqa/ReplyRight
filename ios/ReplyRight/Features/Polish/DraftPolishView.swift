@@ -9,20 +9,23 @@ struct DraftPolishView: View {
     @State private var board = SuggestionBoard()
     @State private var draft = ""
     @State private var context = ""
-    @State private var action: RefineAction = .flirty
+    @State private var action: RefineAction = .moreNatural
     @State private var showsContext = false
 
     private static let choices: [RefineAction] = [
-        .flirty, .playful, .moreConfident, .moreNatural, .lessIntense, .shorter, .funnier, .moreRomantic, .charming, .moreLikeMe,
+        .moreNatural, .playful, .moreConfident, .moreRomantic, .lessIntense, .shorter, .moreDirect, .askQuestion, .keepGoing,
+        .flirty, .funnier, .moreLikeMe,
     ]
 
     var body: some View {
         ScreenScroll {
             ScreenHeader(
-                lead: "Bring me ",
-                emphasis: "your draft.",
-                subtitle: "You're closer than you think. Let's make it sound natural."
+                lead: "Bring me your draft",
+                emphasis: "",
+                subtitle: "You're closer than you think. Keep what's you, fix the rest."
             )
+
+            ConnectionNotice()
 
             VStack(alignment: .leading, spacing: RRSpace.s) {
                 HStack {
@@ -47,7 +50,7 @@ struct DraftPolishView: View {
             ChoiceGroup(
                 title: "Make it",
                 options: DraftPolishView.choices,
-                label: { $0.title },
+                label: { $0.tweakTitle },
                 selection: $action
             )
 
@@ -81,13 +84,14 @@ struct DraftPolishView: View {
                 onRetry: { run() }
             )
 
-            if board.state == .loaded {
+            if !draft.trimmed.isEmpty {
                 Button {
-                    app.askCoach(question: "Does this sound okay to send?", conversation: context, draft: draft)
+                    app.reviewWithCoach(draft: draft, conversation: context)
                 } label: {
-                    Label("Not sure? Ask the coach about this draft", systemImage: "lightbulb")
+                    Label("Have the coach look at it and explain why", systemImage: "graduationcap")
                 }
                 .buttonStyle(.rrQuiet)
+                .accessibilityIdentifier("polish-review")
             }
         }
         .navigationBarTitleDisplayMode(.inline)

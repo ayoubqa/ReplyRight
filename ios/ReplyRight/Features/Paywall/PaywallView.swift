@@ -72,12 +72,12 @@ struct PaywallView: View {
                     detail: "\(app.plans.pro.dailyGenerations) replies a day instead of \(app.plans.free.dailyGenerations)."
                 )
                 Benefit(
-                    systemImage: "sparkles",
+                    systemImage: "quote.opening",
                     title: "Every way to reply",
                     detail: "Ask them out, say how you feel, answer a dry message, and more."
                 )
                 Benefit(
-                    systemImage: "lightbulb",
+                    systemImage: "graduationcap",
                     title: "A real conversation with your coach",
                     detail: "Room to talk things through, not just a few questions."
                 )

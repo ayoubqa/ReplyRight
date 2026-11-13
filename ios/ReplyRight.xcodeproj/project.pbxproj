@@ -19,6 +19,10 @@
 			isa = PBXBuildFile;
 			fileRef = 08E0B25370288FE2ADF60128;
 		};
+		1134124CD48E485FD0307999 = {
+			isa = PBXBuildFile;
+			fileRef = 88FFD890BFFD58F228F560A6;
+		};
 		17495D5AAF550C330184EE27 = {
 			isa = PBXBuildFile;
 			fileRef = 631D4AAF3EF69BAE7AD1210F;
@@ -366,6 +370,12 @@
 			path = PrivacyInfo.xcprivacy;
 			sourceTree = "<group>";
 		};
+		88FFD890BFFD58F228F560A6 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ConnectionView.swift;
+			sourceTree = "<group>";
+		};
 		9532D5ACA1B1CBE8D8333768 = {
 			isa = PBXFileReference;
 			explicitFileType = "wrapper.app-extension";
@@ -631,6 +641,7 @@
 		63FD1B23C81A5554499689B8 = {
 			isa = PBXGroup;
 			children = (
+				88FFD890BFFD58F228F560A6,
 				F1983FBDEC60992AC505B0C4,
 				359DAF351E2E9F5DD1A36ECD,
 				7815686F8DF2D6C9DB7F26F0,
@@ -992,6 +1003,7 @@
 				3A7C644149989F1E09A14C41,
 				3964758FABF4916A4105989D,
 				4F8F40F39D65FF7B06B6C1F3,
+				1134124CD48E485FD0307999,
 				3419C9FED3E7C0EF8BACB22D,
 				28CEC48E26811F3E0DB8FE3D,
 				307FA22B7AF5B4C6BDAB18CD,

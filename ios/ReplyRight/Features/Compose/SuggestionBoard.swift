@@ -16,6 +16,8 @@ final class SuggestionBoard {
     var mode: GenerationMode?
     var refiningID: UUID?
     var refineNotice: String?
+    /// The typed error behind a failed state.
+    var failure: APIError?
 
     @ObservationIgnored private var seen: [String] = []
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -31,6 +33,7 @@ final class SuggestionBoard {
         if !regenerate { seen = [] }
         options = []
         refineNotice = nil
+        failure = nil
         state = .loading
         let request = makeRequest(regenerate ? seen : [])
 
@@ -47,8 +50,10 @@ final class SuggestionBoard {
                 )
             } catch let error as APIError {
                 guard let self, !Task.isCancelled, error != .cancelled else { return }
+                self.failure = error
                 self.state = .failed(app.present(error))
             } catch {
+                self?.failure = nil
                 self?.state = .failed("Something went wrong. Please try again.")
             }
         }
@@ -59,6 +64,7 @@ final class SuggestionBoard {
         work?.cancel()
         options = []
         refineNotice = nil
+        failure = nil
         state = .loading
 
         work = Task { [weak self] in
@@ -74,8 +80,10 @@ final class SuggestionBoard {
                 )
             } catch let error as APIError {
                 guard let self, !Task.isCancelled, error != .cancelled else { return }
+                self.failure = error
                 self.state = .failed(app.present(error))
             } catch {
+                self?.failure = nil
                 self?.state = .failed("Something went wrong. Please try again.")
             }
         }
@@ -131,7 +139,7 @@ final class SuggestionBoard {
     }
 }
 
-/// Renders a board: loading, failure, or the cards.
+/// Renders a board: loading, failure, or the suggestions.
 struct SuggestionBoardView: View {
     @Environment(AppModel.self) private var app
     @Bindable var board: SuggestionBoard
@@ -150,16 +158,18 @@ struct SuggestionBoardView: View {
             case .loading:
                 ThinkingView(lines: loadingLines)
             case .failed(let message):
-                ErrorNote(message, action: onRetry)
+                FailureNote(error: board.failure, message: message, retry: onRetry)
             case .loaded:
-                if !board.note.isEmpty {
-                    Text(board.note)
-                        .rrText(.titleSmall)
-                        .foregroundStyle(Color.rrText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if board.mode == .demo {
-                    DemoBadge(detailed: true)
+                VStack(alignment: .leading, spacing: RRSpace.xs) {
+                    if !board.note.isEmpty {
+                        Text(board.note)
+                            .rrText(.titleSmall)
+                            .foregroundStyle(Color.rrText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let mode = board.mode {
+                        ProvenanceLabel(mode)
+                    }
                 }
                 if let headsUp = board.headsUp, !headsUp.isEmpty {
                     HeadsUpNote(headsUp)
@@ -175,6 +185,7 @@ struct SuggestionBoardView: View {
                             isDemo: board.mode == .demo,
                             isRefining: board.refiningID == option.id,
                             intent: intent,
+                            crushID: crush?.id,
                             onRefine: { action in
                                 board.refine(
                                     optionID: option.id,

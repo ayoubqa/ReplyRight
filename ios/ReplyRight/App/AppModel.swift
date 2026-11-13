@@ -71,9 +71,11 @@ enum PaywallReason: Identifiable, Equatable {
 
 /// Context handed to the coach from elsewhere in the app.
 struct CoachSeed: Equatable {
+    var mode: CoachMode = .ask
     var question: String?
     var conversation: String
     var draft: String
+    var crushID: UUID?
 }
 
 /// The app's shared state: what the user has set up, what the server last
@@ -121,6 +123,17 @@ final class AppModel {
     var usage: Usage?
     var plans: PlanCatalog
     var mode: GenerationMode?
+
+    // Whether the server can be reached and what kind of answers it gives.
+    var connection: ConnectionState = .unknown
+    /// "development", "staging" or "production", as the server describes itself.
+    var serverEnvironment: String?
+    var lastChecked: Date?
+    var probe: ProbeResult?
+    var probeError: APIError?
+    var isProbing = false
+    /// Set to show the connection screen from anywhere.
+    var showsConnection = false
 
     // Handed over from the share sheet or kept for the keyboard.
     var inbox: SharedInboxItem?
@@ -186,9 +199,12 @@ final class AppModel {
         }
     }
 
-    var apiBaseURL: URL {
-        AppConfig.apiBaseURL(override: settings.apiBaseURLOverride)
+    /// The server this build is talking to right now, and why that one.
+    var backend: BackendTarget {
+        AppConfig.backend(settings: settings)
     }
+
+    var apiBaseURL: URL { backend.url }
 
     // MARK: Refreshing
 
@@ -197,17 +213,69 @@ final class AppModel {
         reloadSharedState()
         await purchases.refreshEntitlements()
 
-        guard force || Date().timeIntervalSince(lastStatusRefresh) > 60 else { return }
+        // A broken connection is rechecked every time; a healthy one once a minute.
+        let interval: TimeInterval = connection.isProblem || connection == .unknown ? 5 : 60
+        guard force || Date().timeIntervalSince(lastStatusRefresh) > interval else { return }
+        await checkConnection()
+    }
+
+    /// Asks the server how it is. The result drives the connection indicator
+    /// everywhere in the app, so a failure here is shown, never swallowed.
+    func checkConnection() async {
         lastStatusRefresh = Date()
+        // Only show "checking" when there is nothing better to show, so a healthy indicator does not flicker.
+        if !connection.canAnswer || connection == .unknown {
+            connection = .checking
+        }
         do {
             let status = try await api.status()
             plans = status.plans
             usage = status.usage
             mode = status.mode
+            serverEnvironment = status.environment
+            connection = ConnectionState(status: status)
             store.saveService(ServiceSnapshot(usage: status.usage, plans: status.plans, mode: status.mode))
+        } catch let error as APIError {
+            if error != .cancelled {
+                connection = .unreachable(error)
+            }
         } catch {
-            // Status is a nicety. The app keeps working from the last known values.
+            connection = .unreachable(.serverUnreachable(.other))
         }
+        lastChecked = Date()
+    }
+
+    /// Asks the server to make one small, fixed AI call, to prove the key and
+    /// model really work. Nothing from the user is sent.
+    func runProbe() async {
+        guard !isProbing else { return }
+        isProbing = true
+        probe = nil
+        probeError = nil
+        do {
+            probe = try await api.probe()
+        } catch let error as APIError {
+            probeError = error
+        } catch {
+            probeError = .unexpectedResponse
+        }
+        isProbing = false
+        await checkConnection()
+    }
+
+    /// Points the app at another server. Development builds only; a release build ignores both values.
+    func setBackend(environment: BackendEnvironment?, customURL: String?) {
+        var updated = settings
+        updated.apiEnvironment = environment?.rawValue
+        let clean = customURL?.trimmed ?? ""
+        updated.apiBaseURLOverride = clean.isEmpty ? nil : clean
+        settings = updated
+        connection = .unknown
+        serverEnvironment = nil
+        probe = nil
+        probeError = nil
+        mode = nil
+        Task { await checkConnection() }
     }
 
     /// Picks up anything the share sheet or keyboard left in the shared container.
@@ -220,6 +288,15 @@ final class AppModel {
         self.usage = usage
         self.mode = mode
         store.record(usage: usage, mode: mode)
+        // An answer is the best evidence there is about the connection.
+        switch mode {
+        case .demo:
+            connection = .demo
+        case .live:
+            if case .live = connection {} else {
+                connection = .live(model: nil)
+            }
+        }
     }
 
     // MARK: Errors and upgrades
@@ -243,7 +320,18 @@ final class AppModel {
             paywall = .general
             return message
         default:
+            noteFailure(error)
             return error.userMessage
+        }
+    }
+
+    /// Keeps the connection indicator honest after a failed request.
+    func noteFailure(_ error: APIError) {
+        if error.isConnectionProblem {
+            connection = .unreachable(error)
+        } else if case .unavailable = error {
+            // The server answered but its AI did not. Ask it why.
+            Task { await checkConnection() }
         }
     }
 
@@ -276,14 +364,14 @@ final class AppModel {
         savedReplies.contains { $0.text == text }
     }
 
-    func toggleSaved(text: String, style: String, intent: Intent?) {
+    func toggleSaved(text: String, style: String, intent: Intent?, crushID: UUID? = nil) {
         let clean = text.trimmed
         guard !clean.isEmpty else { return }
         if let index = savedReplies.firstIndex(where: { $0.text == clean }) {
             savedReplies.remove(at: index)
             toast = "Removed from saved."
         } else {
-            savedReplies.insert(SavedReply(text: clean, style: style, intent: intent), at: 0)
+            savedReplies.insert(SavedReply(text: clean, style: style, intent: intent, crushID: crushID), at: 0)
             Haptics.success()
             toast = "Saved. It's in your keyboard too."
         }
@@ -303,11 +391,61 @@ final class AppModel {
         return people.first { $0.id == id }
     }
 
+    /// Adds a new profile or replaces the stored one with the same id.
+    func savePerson(_ person: CrushProfile) {
+        var updated = person
+        updated.updatedAt = Date()
+        if let index = people.firstIndex(where: { $0.id == person.id }) {
+            people[index] = updated
+        } else {
+            people.insert(updated, at: 0)
+        }
+    }
+
+    func savedReplies(for id: UUID) -> [SavedReply] {
+        savedReplies.filter { $0.crushID == id }
+    }
+
+    func sessions(for id: UUID) -> [SavedSession] {
+        sessions.filter { $0.crushID == id }
+    }
+
+    /// Permanently removes a profile and everything attached to it: photo,
+    /// replies and conversations saved for that person, and keyboard context about them.
+    func deletePerson(_ id: UUID) {
+        store.deletePerson(id)
+        // The store did the work on disk. Bring memory in line without writing it all again.
+        people = store.loadPeople()
+        savedReplies = store.loadSavedReplies()
+        sessions = store.loadSessions()
+        settings = store.loadSettings()
+        keyboardContext = store.loadKeyboardContext()
+        if compose.crush?.id == id {
+            compose.crush = nil
+        }
+        Haptics.success()
+        toast = "Deleted for good."
+    }
+
+    /// Writes everything held about one person to a temporary file the user can save or share.
+    func exportPerson(_ id: UUID) -> URL? {
+        guard let person = person(id), let data = store.exportPerson(id) else { return nil }
+        let safeName = person.alias.trimmed.replacingOccurrences(of: "/", with: "-")
+        let name = "ReplyRight - \(safeName.isEmpty ? "profile" : safeName).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do {
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            return url
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: Keyboard handoff
 
     /// Makes conversation text available to the ReplyRight keyboard. Only ever called from an explicit tap.
     func handToKeyboard(_ text: String, crush: CrushProfile?) {
-        let context = KeyboardContext(text: text, source: .app, crush: crush?.payload)
+        let context = KeyboardContext(text: text, source: .app, crush: crush?.payload, crushID: crush?.id)
         guard !context.text.isEmpty else { return }
         store.saveKeyboardContext(context)
         keyboardContext = context
@@ -358,8 +496,14 @@ final class AppModel {
 
     // MARK: Coach
 
-    func askCoach(question: String? = nil, conversation: String = "", draft: String = "") {
-        coachSeed = CoachSeed(question: question, conversation: conversation, draft: draft)
+    func askCoach(question: String? = nil, conversation: String = "", draft: String = "", crushID: UUID? = nil) {
+        coachSeed = CoachSeed(mode: .ask, question: question, conversation: conversation, draft: draft, crushID: crushID)
+        selectedTab = .coach
+    }
+
+    /// Opens the coach to look at one message the user wrote.
+    func reviewWithCoach(draft: String, conversation: String = "", crushID: UUID? = nil) {
+        coachSeed = CoachSeed(mode: .review, question: nil, conversation: conversation, draft: draft, crushID: crushID)
         selectedTab = .coach
     }
 
@@ -376,8 +520,12 @@ final class AppModel {
         case .sessions:
             sessions = []
         case .people:
+            store.erase(.people)
             people = []
-            settings.lastCrushID = nil
+            var updated = settings
+            updated.lastCrushID = nil
+            updated.keyboardCrushID = nil
+            settings = updated
         case .voice:
             voice = .standard
         case .styles:
