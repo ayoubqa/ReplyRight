@@ -3,8 +3,8 @@ import ReplyRightCore
 import SwiftUI
 import UIKit
 
-// The ReplyRight mark: an opening quotation mark followed by a text cursor.
-// It is the moment just before you say something.
+// The ReplyRight mark: a closing quotation mark followed by a text cursor.
+// What they said, and the moment before you answer.
 //
 // The geometry here is the same as `brand/build.py`, which produces the logo
 // files and the app icon, so the mark drawn in the app is the mark in the icon.

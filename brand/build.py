@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Builds ReplyRight's brand artwork from its geometry.
 
-The mark is an opening quotation mark followed by a text cursor: the moment
-just before you say something. The primary logo is the same idea with the name
+The mark is a closing quotation mark followed by a text cursor: what they
+said, and the moment before you answer. The primary logo is the same idea with the name
 written between the two.
 
 Everything here is original vector artwork. The wordmark is set in Young Serif

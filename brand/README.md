@@ -2,9 +2,9 @@
 
 ## The mark
 
-An opening quotation mark followed by a text cursor: **the moment just before you say something.**
+A closing quotation mark followed by a text cursor: **what they said, and the moment before you answer.**
 
-The quotation strokes are drawn like a pen pressed down and lifted. They lean in. The cursor stands straight and waits. There is no speech bubble and no sparkle.
+Their words end; your cursor waits. The quotation strokes are drawn like a pen pressed down and lifted, and they lean forward. The cursor stands straight. There is no speech bubble and no sparkle.
 
 The primary logo is the same idea with the name written between the two: quote, ReplyRight, cursor. The symbol is the logo with the name taken out.
 
@@ -65,4 +65,4 @@ If you change the mark's numbers in `build.py`, change `BrandGeometry` in `ios/P
 
 ## How it was chosen
 
-Eight directions were drawn and compared at icon sizes before this one was picked: an opening quote with a cursor, a tilted variant, two quotation marks leaning towards each other, a cursive double-r with a tick, a heart made of quotation marks, a proofreader's insertion caret, a lowercase r over three "keep this" dots, and a single quote with a cursor. The quote-and-cursor family was the only one that said what the product is for, stayed legible at 29 pt, and could move (the cursor blinks). The round "66" quotation marks read as numerals, so the strokes were redrawn as tapered pen presses.
+Eight directions were drawn and compared at icon sizes before this one was picked: a quotation mark with a cursor, a tilted variant, two quotation marks leaning towards each other, a cursive double-r with a tick, a heart made of quotation marks, a proofreader's insertion caret, a lowercase r over three "keep this" dots, and a single quote with a cursor. The quote-and-cursor family was the only one that said what the product is for, stayed legible at 29 pt, and could move (the cursor blinks). The round "66" quotation marks read as numerals, so the strokes were redrawn as tapered pen presses.
