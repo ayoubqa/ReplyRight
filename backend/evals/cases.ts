@@ -1,4 +1,5 @@
 import type { RefineRequest, RepliesRequest } from "@/lib/domain/contracts";
+import { crushSchema } from "@/lib/domain/voice";
 
 /**
  * Evaluation cases for choosing production models.
@@ -101,7 +102,7 @@ export const CASES: EvalCase[] = [
     request: {
       conversation: "Them: last night was really fun\nThem: I didn't want it to end honestly",
       intent: "feelings",
-      crush: { alias: "J", stage: "been_on_dates", notes: "third date was last night" },
+      crush: crushSchema.parse({ alias: "J", stage: "been_on_dates", notes: "third date was last night" }),
     },
     expect: { language: "en" },
   },

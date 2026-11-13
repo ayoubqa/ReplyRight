@@ -14,7 +14,24 @@ describe("request schemas", () => {
       locale: "en",
     });
     expect(voiceSchema.parse({})).toMatchObject({ defaultTone: "playful", emoji: "rare", length: "short", samples: [] });
-    expect(crushSchema.parse({ alias: " Sam " })).toEqual({ alias: "Sam", stage: "talking", notes: "" });
+    expect(crushSchema.parse({ alias: " Sam " })).toEqual({
+      alias: "Sam",
+      stage: "talking",
+      notes: "",
+      metAt: "",
+      language: "",
+      interests: [],
+      background: "",
+      preferences: "",
+      details: "",
+      history: "",
+    });
+    expect(coachRequestSchema.parse({ messages: [{ role: "user", text: "hi" }] })).toMatchObject({
+      mode: "ask",
+      topic: "general",
+      draft: "",
+      goal: "",
+    });
   });
 
   it("enforce limits", () => {
@@ -23,7 +40,10 @@ describe("request schemas", () => {
     expect(voiceSchema.safeParse({ samples: Array(9).fill("hey") }).success).toBe(false);
     expect(voiceSchema.safeParse({ replyLanguage: "klingon" }).success).toBe(false);
     expect(refineRequestSchema.safeParse({ text: "hi", action: "shorter", count: 2 }).success).toBe(false);
-    expect(coachRequestSchema.safeParse({ messages: [] }).success).toBe(false);
+    expect(coachRequestSchema.safeParse({ mode: "lecture" }).success).toBe(false);
+    expect(coachRequestSchema.safeParse({ mode: "practice", scenario: { id: "seduce" } }).success).toBe(false);
+    expect(crushSchema.safeParse({ alias: "Sam", interests: Array(11).fill("x") }).success).toBe(false);
+    expect(crushSchema.safeParse({ alias: "Sam", background: "x".repeat(401) }).success).toBe(false);
     expect(crushSchema.safeParse({ alias: "" }).success).toBe(false);
   });
 });

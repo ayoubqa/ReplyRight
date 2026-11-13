@@ -1,7 +1,7 @@
 import { analyzeRequestSchema, type Analysis } from "@/lib/domain/contracts";
 import { handleTask } from "@/lib/server/pipeline";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/v1/analyze

@@ -72,7 +72,17 @@ export function describeVoice(voice: Voice | undefined, options: { includeSample
 export function describeCrush(crush: Crush | undefined): string | null {
   if (!crush) return null;
   const lines = [`Nickname the user gave them: ${crush.alias}`, `Where things stand: ${CRUSH_STAGE_LABELS[crush.stage]}`];
-  if (crush.notes) lines.push(`What the user told us about them: ${crush.notes}`);
+  if (crush.metAt) lines.push(`Where they met: ${crush.metAt}`);
+  if (crush.language) lines.push(`Language they prefer to text in: ${crush.language}`);
+  if (crush.interests.length) lines.push(`Interests and hobbies: ${crush.interests.join(", ")}`);
+  if (crush.background) lines.push(`Background: ${crush.background}`);
+  if (crush.preferences) lines.push(`How they like to communicate: ${crush.preferences}`);
+  if (crush.details) lines.push(`Details worth remembering: ${crush.details}`);
+  if (crush.history) lines.push(`Earlier conversations, in the user's words: ${crush.history}`);
+  if (crush.notes) lines.push(`Other notes: ${crush.notes}`);
+  lines.push(
+    "The user wrote all of this themselves. Use a detail only where it fits this moment naturally, never list it back, and never add facts about this person that are not written here.",
+  );
   return `<the_person>\n${lines.join("\n")}\n</the_person>`;
 }
 

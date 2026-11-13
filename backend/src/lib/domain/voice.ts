@@ -63,10 +63,29 @@ export const CRUSH_STAGE_LABELS: Record<CrushStage, string> = {
   reconnecting: "We're reconnecting after a gap",
 };
 
-/** Optional context about the person, entered by the user under an alias. */
+/**
+ * Optional context about the person, entered by the user under a nickname.
+ *
+ * The app sends only the fields the user has allowed for that profile, and
+ * only when they picked the profile for this conversation. Photos, saved
+ * replies and private notes never leave the device.
+ */
 export const crushSchema = z.object({
   alias: z.string().trim().min(1).max(40),
   stage: z.enum(CRUSH_STAGES).default("talking"),
   notes: z.string().trim().max(400).default(""),
+  /** Where the two of them met. */
+  metAt: z.string().trim().max(80).default(""),
+  /** The language this person prefers to text in. Empty when unknown. */
+  language: z.string().trim().max(24).default(""),
+  interests: z.array(z.string().trim().min(1).max(40)).max(10).default([]),
+  /** Background the user chose to write down. */
+  background: z.string().trim().max(400).default(""),
+  /** How this person likes to communicate, as far as the user knows. */
+  preferences: z.string().trim().max(300).default(""),
+  /** Details the user wants remembered (a trip, an exam, a pet's name). */
+  details: z.string().trim().max(400).default(""),
+  /** The user's own summary of earlier conversations. */
+  history: z.string().trim().max(600).default(""),
 });
 export type Crush = z.infer<typeof crushSchema>;

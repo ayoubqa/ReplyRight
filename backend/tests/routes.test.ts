@@ -3,8 +3,10 @@ import { POST as analyze } from "@/app/api/v1/analyze/route";
 import { POST as coach } from "@/app/api/v1/coach/route";
 import { POST as refine } from "@/app/api/v1/refine/route";
 import { POST as replies } from "@/app/api/v1/replies/route";
+import { POST as probe } from "@/app/api/v1/diagnostics/probe/route";
 import { GET as status } from "@/app/api/v1/status/route";
 import { resetProviderCache } from "@/lib/ai";
+import { aiHealth, recordAiFailure, recordAiSuccess, resetAiHealth } from "@/lib/ai/health";
 import { resetEntitlementCache } from "@/lib/server/entitlements";
 import { resetUsage } from "@/lib/server/usage";
 import { xcodeTransaction } from "./helpers/storekit";
@@ -41,9 +43,18 @@ beforeEach(() => {
   resetProviderCache();
   resetEntitlementCache();
   resetUsage();
+  resetAiHealth();
+  process.env.REQUEST_LOG = "off";
 });
 afterEach(() => {
-  for (const key of ["FREE_DAILY_GENERATIONS", "FREE_DAILY_COACH_MESSAGES", "ENTITLEMENT_TRUST_XCODE", "APPLE_BUNDLE_ID"]) {
+  for (const key of [
+    "FREE_DAILY_GENERATIONS",
+    "FREE_DAILY_COACH_MESSAGES",
+    "ENTITLEMENT_TRUST_XCODE",
+    "APPLE_BUNDLE_ID",
+    "RR_ENVIRONMENT",
+    "DIAGNOSTICS_TOKEN",
+  ]) {
     delete process.env[key];
   }
 });
@@ -209,6 +220,59 @@ describe("POST /api/v1/coach", () => {
       json("/api/v1/coach", { messages: [{ role: "user", text: "hi" }, { role: "coach", text: "hello" }] }),
     );
     expect(res.status).toBe(400);
+    expect((await coach(json("/api/v1/coach", { messages: [] }))).status).toBe(400);
+  });
+
+  it("reviews a message the user wrote, with every part of the feedback", async () => {
+    const res = await coach(json("/api/v1/coach", { mode: "review", draft: "hey!! miss you already", goal: "warm, not clingy" }));
+    expect(res.status).toBe(200);
+    const { result } = await res.json();
+    expect(result.message).toMatch(/demo mode/i);
+    expect(Object.keys(result.review).sort()).toEqual(
+      ["alternative", "checks", "comesAcross", "improvements", "intent", "lesson", "whyItWorks"].sort(),
+    );
+    expect(result.review.checks.map((c: { aspect: string }) => c.aspect)).toEqual([
+      "natural",
+      "intensity",
+      "formality",
+      "feeling",
+      "clarity",
+    ]);
+    expect(result.practice).toBeNull();
+
+    const empty = await coach(json("/api/v1/coach", { mode: "review" }));
+    expect(empty.status).toBe(400);
+    expect((await empty.json()).error.message).toMatch(/message you want feedback on/i);
+  });
+
+  it("runs a practice conversation turn by turn", async () => {
+    const scenario = { id: "keep_it_going" };
+    const opening = await coach(json("/api/v1/coach", { mode: "practice", scenario }));
+    expect(opening.status).toBe(200);
+    const first = (await opening.json()).result;
+    expect(first.message).toMatch(/demo mode/i);
+    expect(first.practice.feedback).toBeNull();
+    expect(typeof first.practice.partnerReply).toBe("string");
+
+    const next = await coach(
+      json("/api/v1/coach", {
+        mode: "practice",
+        scenario,
+        messages: [
+          { role: "coach", text: first.practice.partnerReply },
+          { role: "user", text: "pretty good! finally tried that ramen place" },
+        ],
+      }),
+    );
+    expect(next.status).toBe(200);
+    expect((await next.json()).result.practice.feedback).toMatch(/^Sample:/);
+
+    expect((await coach(json("/api/v1/coach", { mode: "practice" }))).status).toBe(400);
+    expect((await coach(json("/api/v1/coach", { mode: "practice", scenario: { id: "custom" } }))).status).toBe(400);
+    const waiting = await coach(
+      json("/api/v1/coach", { mode: "practice", scenario, messages: [{ role: "coach", text: "hey" }] }),
+    );
+    expect(waiting.status).toBe(400);
   });
 });
 
@@ -216,12 +280,66 @@ describe("GET /api/v1/status", () => {
   it("reports mode, plans and usage without secrets", async () => {
     const res = await status(new Request("http://test/api/v1/status", { headers: headers() }));
     const body = await res.json();
-    expect(body).toMatchObject({ apiVersion: 1, mode: "demo", provider: "demo" });
+    expect(body).toMatchObject({ apiVersion: 2, mode: "demo", provider: "demo", environment: "development" });
+    expect(body.ai).toEqual({ state: "untested", lastSuccessAt: null, lastFailureAt: null, lastFailureReason: null, models: null });
     expect(body.plans.free.intents).toContain("boundary");
     expect(body.plans.free.intents).not.toContain("ask_out");
     expect(body.plans.pro.intents).toHaveLength(12);
     expect(body.usage.tier).toBe("free");
+    expect(body.refineActions).toEqual(expect.arrayContaining(["more_direct", "ask_question", "keep_going"]));
+    expect(body.coach.modes).toEqual(["ask", "review", "practice"]);
     expect(JSON.stringify(body)).not.toMatch(/sk-ant|api[_-]?key/i);
+  });
+
+  it("names the deployment and reflects recent AI health", async () => {
+    process.env.RR_ENVIRONMENT = "staging";
+    recordAiSuccess();
+    recordAiFailure("credentials");
+    // A refusal or a garbled answer says nothing about whether the service is up.
+    recordAiFailure("refusal");
+    const body = await (await status(new Request("http://test/api/v1/status", { headers: headers() }))).json();
+    expect(body.environment).toBe("staging");
+    expect(body.ai.state).toBe("failing");
+    expect(body.ai.lastFailureReason).toBe("credentials");
+    expect(aiHealth().lastSuccessAt).not.toBeNull();
+  });
+});
+
+describe("request pipeline", () => {
+  it("tags every answer with a request id and never caches it", async () => {
+    const ok = await refine(json("/api/v1/refine", { text: "hello there", action: "shorter" }));
+    const bad = await refine(json("/api/v1/refine", { text: "", action: "shorter" }));
+    for (const res of [ok, bad]) {
+      expect(res.headers.get("x-rr-request")).toMatch(/^[0-9a-f-]{36}$/);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    }
+    expect(ok.headers.get("x-rr-request")).not.toBe(bad.headers.get("x-rr-request"));
+  });
+
+  it("accepts the three newer rewrite actions", async () => {
+    for (const action of ["more_direct", "ask_question", "keep_going"]) {
+      const res = await refine(json("/api/v1/refine", { text: "want to get coffee sometime maybe", action }));
+      expect(res.status).toBe(200);
+    }
+  });
+});
+
+describe("POST /api/v1/diagnostics/probe", () => {
+  const call = (extra: Record<string, string> = {}) =>
+    probe(new Request("http://test/api/v1/diagnostics/probe", { method: "POST", headers: headers(extra) }));
+
+  it("says plainly when there is no AI to probe", async () => {
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: false, mode: "demo", reason: "not_configured" });
+  });
+
+  it("is closed outside development unless the caller has the token", async () => {
+    process.env.RR_ENVIRONMENT = "production";
+    expect((await call()).status).toBe(403);
+    process.env.DIAGNOSTICS_TOKEN = "let-me-in";
+    expect((await call({ "x-rr-diagnostics": "wrong" })).status).toBe(403);
+    expect((await call({ "x-rr-diagnostics": "let-me-in" })).status).toBe(200);
   });
 });
 

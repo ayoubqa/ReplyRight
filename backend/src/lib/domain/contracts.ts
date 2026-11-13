@@ -136,6 +136,9 @@ export const REFINE_ACTIONS = [
   "charming",
   "subtle",
   "warm",
+  "more_direct",
+  "ask_question",
+  "keep_going",
 ] as const;
 export type RefineAction = (typeof REFINE_ACTIONS)[number];
 
@@ -163,21 +166,104 @@ export const coachMessageSchema = z.object({
   text: z.string().trim().min(1).max(LIMITS.coachMessageChars),
 });
 
+/**
+ * ask      a question to the coach, optionally about a draft or a conversation
+ * review   feedback on one message the user wrote or plans to send
+ * practice a rehearsal: the coach plays the other person and gives feedback
+ */
+export const COACH_MODES = ["ask", "review", "practice"] as const;
+export type CoachMode = (typeof COACH_MODES)[number];
+
+export const COACH_TOPICS = ["general", "flirting", "conversation", "asking_out", "confidence"] as const;
+export type CoachTopic = (typeof COACH_TOPICS)[number];
+
+export const PRACTICE_SCENARIOS = [
+  "first_message",
+  "keep_it_going",
+  "flirting",
+  "asking_out",
+  "reconnecting",
+  "boundary",
+  "custom",
+] as const;
+export type PracticeScenario = (typeof PRACTICE_SCENARIOS)[number];
+
 export const coachRequestSchema = z.object({
-  messages: z.array(coachMessageSchema).min(1).max(LIMITS.coachMessages),
+  mode: z.enum(COACH_MODES).default("ask"),
+  topic: z.enum(COACH_TOPICS).default("general"),
+  /**
+   * ask: the running chat with the coach, ending on the user's question.
+   * practice: the rehearsal so far. "user" is what the user sent, "coach" is
+   * what the simulated person answered. Empty on the opening turn.
+   */
+  messages: z.array(coachMessageSchema).max(LIMITS.coachMessages).default([]),
   conversation,
-  /** A message the user is thinking of sending and wants feedback on. */
+  /** A message the user wrote or is thinking of sending. Required for review. */
   draft: z.string().trim().max(LIMITS.draftChars).default(""),
+  /** Review: what the user wants the message to get across. */
+  goal: z.string().trim().max(LIMITS.instructionChars).default(""),
+  /** Practice: the situation being rehearsed. */
+  scenario: z
+    .object({
+      id: z.enum(PRACTICE_SCENARIOS),
+      detail: z.string().trim().max(300).default(""),
+    })
+    .optional(),
   ...shared,
 });
 export type CoachRequest = z.infer<typeof coachRequestSchema>;
 
+export const REVIEW_ASPECTS = ["natural", "intensity", "formality", "feeling", "clarity"] as const;
+export const REVIEW_VERDICTS = ["good", "watch", "rework"] as const;
+
+export const coachReviewSchema = z.object({
+  intent: z.string().describe("What the user is trying to communicate, in one plain sentence."),
+  comesAcross: z
+    .string()
+    .describe("What the message as written communicates: how it could read to the person receiving it. Hedged, never a claim about what they will think."),
+  checks: z
+    .array(
+      z.object({
+        aspect: z.enum(REVIEW_ASPECTS),
+        verdict: z.enum(REVIEW_VERDICTS),
+        note: z.string().describe("One short sentence explaining the verdict, pointing at the words that cause it."),
+      }),
+    )
+    .describe(
+      "One entry per aspect, in this order: natural (does it sound like a real text), intensity (too much, too eager), formality (too stiff), feeling (does it carry the feeling they intend), clarity (could it be misunderstood).",
+    ),
+  improvements: z.array(z.string()).describe("0-3 concrete things that could be better. Empty when the message is already good."),
+  alternative: z
+    .string()
+    .describe("A suggested alternative, exactly as it would be sent. When the original is already good, return it unchanged or nearly unchanged."),
+  whyItWorks: z.string().describe("One or two sentences on why the alternative works."),
+  lesson: z.string().describe("One small, transferable lesson the user can reuse next time."),
+});
+export type CoachReview = z.infer<typeof coachReviewSchema>;
+
+export const coachPracticeSchema = z.object({
+  partnerReply: z
+    .string()
+    .nullable()
+    .describe("The simulated person's next message, written as a text. Null when the user should send the first message, or when the practice has ended."),
+  feedback: z
+    .string()
+    .nullable()
+    .describe("Coaching on the user's latest practice message: what worked and one thing to try. Null on the opening turn."),
+  tryThis: z.string().nullable().describe("One line the user could try next, or null."),
+  finished: z.boolean().describe("True when the rehearsal has reached a natural end."),
+});
+export type CoachPractice = z.infer<typeof coachPracticeSchema>;
+
 export const coachResultSchema = z.object({
-  message: z.string().describe("The coach's answer: practical, warm, a few short paragraphs at most. Plain text, no markdown."),
+  message: z.string().describe("The coach's words to the user: practical, warm, a few short paragraphs at most. Plain text, no markdown."),
   suggestions: z
     .array(z.object({ label: z.string(), text: z.string() }))
     .describe("0-3 ready-to-send lines when wording would help, each with a 2-3 word label."),
   followUps: z.array(z.string()).describe("2-3 short questions the user might want to ask next, written in their voice."),
+  lesson: z.string().nullable().describe("One small takeaway worth remembering, or null when nothing new was taught."),
+  review: coachReviewSchema.nullable().describe("Filled whenever the user shared a message of their own to look at. Otherwise null."),
+  practice: coachPracticeSchema.nullable().describe("Filled in practice mode. Otherwise null."),
   headsUp: z.string().nullable(),
 });
 export type CoachResult = z.infer<typeof coachResultSchema>;
@@ -215,6 +301,31 @@ export type ApiErrorCode =
   | "ai_bad_output"
   | "internal";
 
+/**
+ * Why an AI call failed, in terms that help whoever runs the server. Shown in
+ * the app's connection diagnostics. Never contains request content or secrets.
+ */
+export type FailureReason =
+  | "credentials"
+  | "billing"
+  | "model"
+  | "request"
+  | "overloaded"
+  | "timeout"
+  | "network"
+  | "rate_limit"
+  | "refusal"
+  | "output"
+  | "unknown";
+
 export interface ApiErrorBody {
-  error: { code: ApiErrorCode; message: string; usage?: UsageSnapshot };
+  error: { code: ApiErrorCode; message: string; usage?: UsageSnapshot; reason?: FailureReason; requestId?: string };
+}
+
+/** What the server knows about its AI provider since it started. No secrets. */
+export interface AiHealth {
+  state: "untested" | "ok" | "failing";
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastFailureReason: FailureReason | null;
 }

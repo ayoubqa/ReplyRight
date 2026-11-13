@@ -5,6 +5,7 @@ import type {
   AnalyzeRequest,
   CoachRequest,
   CoachResult,
+  FailureReason,
   GenerationMode,
   RefineRequest,
   RefineResult,
@@ -43,12 +44,16 @@ export interface AiProvider {
 }
 
 export class ProviderError extends Error {
+  /** A coarse cause for diagnostics. Never includes request content. */
+  readonly reason: FailureReason;
+
   constructor(
     public readonly kind: "unavailable" | "declined" | "bad_output" | "rate_limited",
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; reason?: FailureReason },
   ) {
-    super(message, options);
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "ProviderError";
+    this.reason = options?.reason ?? "unknown";
   }
 }

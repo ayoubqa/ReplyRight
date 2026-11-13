@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "eval": "tsx --conditions=react-server evals/run.ts"
+    "eval": "tsx --conditions=react-server evals/run.ts",
+    "verify": "node scripts/verify.mjs",
+    "verify:live": "node scripts/verify.mjs --probe --require-live"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

@@ -2,7 +2,14 @@ import "server-only";
 import type { z } from "zod";
 import { getProvider, ProviderError, type AiProvider, type AiTask } from "@/lib/ai";
 import type { TransientImage } from "@/lib/ai/types";
-import type { ApiErrorBody, ApiErrorCode, Envelope, Tier, UsageSnapshot } from "@/lib/domain/contracts";
+import type {
+  ApiErrorBody,
+  ApiErrorCode,
+  Envelope,
+  FailureReason,
+  Tier,
+  UsageSnapshot,
+} from "@/lib/domain/contracts";
 import { resolveTier } from "./entitlements";
 import { InputError, readTransientImages } from "./images";
 import { getPlans, type Plan } from "./plans";
@@ -15,10 +22,37 @@ export function errorResponse(
   status: number,
   code: ApiErrorCode,
   message: string,
-  extra?: { usage?: UsageSnapshot; headers?: HeadersInit },
+  extra?: { usage?: UsageSnapshot; headers?: HeadersInit; reason?: FailureReason },
 ) {
-  const body: ApiErrorBody = { error: { code, message, ...(extra?.usage ? { usage: extra.usage } : {}) } };
+  const body: ApiErrorBody = {
+    error: {
+      code,
+      message,
+      ...(extra?.usage ? { usage: extra.usage } : {}),
+      ...(extra?.reason && extra.reason !== "unknown" ? { reason: extra.reason } : {}),
+    },
+  };
   return Response.json(body, { status, headers: { ...NO_STORE, ...extra?.headers } });
+}
+
+/**
+ * One line per request for whoever runs the server: what was asked for and how
+ * it went. Never the conversation, a draft, a screenshot or a header value.
+ * Set REQUEST_LOG=off to silence it.
+ */
+function logRequest(fields: Record<string, string | number | null>) {
+  if (process.env.REQUEST_LOG?.trim().toLowerCase() === "off") return;
+  const line = Object.entries(fields)
+    .filter(([, value]) => value !== null && value !== "")
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  console.info(`[replyright] ${line}`);
+}
+
+/** The app names itself as "ios-app/1.0.0". Anything else is logged as "other". */
+function clientLabel(request: Request): string {
+  const value = request.headers.get("x-rr-client") ?? "";
+  return /^[a-z0-9-]{1,24}\/[0-9A-Za-z.]{1,16}$/.test(value) ? value : "other";
 }
 
 /** A plan restriction: the request is valid but needs Pro. */
@@ -75,44 +109,93 @@ export async function handleTask<Schema extends z.ZodType, Result>(
   request: Request,
   config: TaskConfig<Schema, Result>,
 ): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const started = Date.now();
+  const outcome: Outcome = { mode: null, images: 0, code: null, reason: null };
+  let response: Response;
+  try {
+    response = await runTask(request, config, outcome);
+  } catch (error) {
+    console.error(`[replyright] Unhandled error in ${config.task}:`, error instanceof Error ? error.name : "unknown");
+    outcome.code = "internal";
+    response = errorResponse(500, "internal", "Something went wrong on our side. Please try again.");
+  }
+  // The id lets a failed request in the app's diagnostics be matched to this log line.
+  response.headers.set("X-RR-Request", requestId);
+  logRequest({
+    task: config.task,
+    status: response.status,
+    ms: Date.now() - started,
+    mode: outcome.mode,
+    images: outcome.images || null,
+    error: outcome.code,
+    reason: outcome.reason,
+    client: clientLabel(request),
+    req: requestId,
+  });
+  return response;
+}
+
+interface Outcome {
+  mode: string | null;
+  images: number;
+  code: ApiErrorCode | null;
+  reason: FailureReason | null;
+}
+
+async function runTask<Schema extends z.ZodType, Result>(
+  request: Request,
+  config: TaskConfig<Schema, Result>,
+  outcome: Outcome,
+): Promise<Response> {
+  const fail = (...args: Parameters<typeof errorResponse>) => {
+    outcome.code = args[1];
+    outcome.reason = args[3]?.reason ?? null;
+    return errorResponse(...args);
+  };
   const limit = checkRateLimit(clientKey(request));
   if (!limit.ok) {
-    return errorResponse(429, "rate_limited", "You're going a little fast. Take a breath and try again in a moment.", {
+    return fail(429, "rate_limited", "You're going a little fast. Take a breath and try again in a moment.", {
       headers: { "Retry-After": String(limit.retryAfterSeconds) },
     });
   }
 
   const body = await readBody(request);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) {
+    outcome.code = "invalid_request";
+    return body;
+  }
   if (!body.payload || typeof body.payload !== "object") {
-    return errorResponse(400, "invalid_request", "We couldn't read that request. Please try again.");
+    return fail(400, "invalid_request", "We couldn't read that request. Please try again.");
   }
 
   const parsed = config.schema.safeParse(body.payload);
   if (!parsed.success) {
-    return errorResponse(400, "invalid_request", parsed.error.issues[0]?.message ?? "Some of the details were invalid.");
+    return fail(400, "invalid_request", parsed.error.issues[0]?.message ?? "Some of the details were invalid.");
   }
   const input = parsed.data as z.infer<Schema>;
 
   let images: TransientImage[] = [];
   if (body.files.length > 0) {
     if (!config.allowImages) {
-      return errorResponse(400, "invalid_request", "This request doesn't take screenshots.");
+      return fail(400, "invalid_request", "This request doesn't take screenshots.");
     }
     try {
       images = await readTransientImages(body.files);
     } catch (error) {
       if (error instanceof InputError) {
-        return errorResponse(error.code === "payload_too_large" ? 413 : 400, error.code, error.message);
+        return fail(error.code === "payload_too_large" ? 413 : 400, error.code, error.message);
       }
       throw error;
     }
   }
 
   const invalid = config.validate?.(input, images);
-  if (invalid) return errorResponse(400, "invalid_request", invalid);
+  if (invalid) return fail(400, "invalid_request", invalid);
 
   const provider = getProvider();
+  outcome.mode = provider.mode;
+  outcome.images = images.length;
   const tier = resolveTier(request);
   const plan = getPlans()[tier];
   const subject = usageSubject(request);
@@ -122,7 +205,7 @@ export async function handleTask<Schema extends z.ZodType, Result>(
     config.gate?.(context);
   } catch (error) {
     if (error instanceof UpgradeRequired) {
-      return errorResponse(402, "upgrade_required", error.message, { usage: usageSnapshot(subject, tier) });
+      return fail(402, "upgrade_required", error.message, { usage: usageSnapshot(subject, tier) });
     }
     throw error;
   }
@@ -138,7 +221,7 @@ export async function handleTask<Schema extends z.ZodType, Result>(
           : tier === "free"
             ? "That's today's free replies. They reset tomorrow, or go Pro to keep going."
             : "You've reached today's limit. It resets tomorrow.";
-      return errorResponse(402, "limit_reached", message, { usage });
+      return fail(402, "limit_reached", message, { usage });
     }
   }
 
@@ -158,16 +241,15 @@ export async function handleTask<Schema extends z.ZodType, Result>(
     if (error instanceof ProviderError) {
       switch (error.kind) {
         case "rate_limited":
-          return errorResponse(429, "rate_limited", error.message);
+          return fail(429, "rate_limited", error.message, { reason: error.reason });
         case "declined":
-          return errorResponse(422, "ai_declined", error.message);
+          return fail(422, "ai_declined", error.message, { reason: error.reason });
         case "bad_output":
-          return errorResponse(502, "ai_bad_output", error.message);
+          return fail(502, "ai_bad_output", error.message, { reason: error.reason });
         case "unavailable":
-          return errorResponse(503, "ai_unavailable", error.message);
+          return fail(503, "ai_unavailable", error.message, { reason: error.reason });
       }
     }
-    console.error(`[replyright] Unhandled error in ${config.task}:`, error instanceof Error ? error.name : "unknown");
-    return errorResponse(500, "internal", "Something went wrong on our side. Please try again.");
+    throw error;
   }
 }

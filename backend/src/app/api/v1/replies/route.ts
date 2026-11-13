@@ -2,7 +2,7 @@ import { repliesRequestSchema, type RepliesResult } from "@/lib/domain/contracts
 import { INTENT_DEFINITIONS } from "@/lib/domain/intents";
 import { handleTask, UpgradeRequired } from "@/lib/server/pipeline";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/v1/replies

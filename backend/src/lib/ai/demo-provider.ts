@@ -2,6 +2,7 @@ import "server-only";
 import type {
   Analysis,
   AnalyzeRequest,
+  CoachRequest,
   CoachResult,
   RefineRequest,
   RefineResult,
@@ -216,16 +217,65 @@ export class DemoProvider implements AiProvider {
     };
   }
 
-  async coach(): Promise<CoachResult> {
+  async coach({ request }: { request: CoachRequest }): Promise<CoachResult> {
     await this.pause();
-    return {
+    const base: CoachResult = {
       message:
         "Demo mode: the coach needs an AI provider connected on the server, so this is a pre-written sample rather than an answer to your question. With AI on, you'd get a direct, practical answer here with the reasoning behind it.",
       suggestions: [
         { label: "Sample line", text: "this would be a much better conversation over a coffee. free this week?" },
       ],
       followUps: ["Is it too soon to suggest meeting?", "Does my reply sound too eager?"],
+      lesson: "Sample: one small takeaway to remember appears here.",
+      review: null,
+      practice: null,
       headsUp: null,
     };
+
+    if (request.mode === "review") {
+      return {
+        ...base,
+        message:
+          "Demo mode: no AI is connected, so I haven't read your message. This is what a review looks like, filled with sample text.",
+        suggestions: [],
+        followUps: ["How do I sound less eager?", "Is this too long?"],
+        review: {
+          intent: "Sample: what you are trying to say appears here.",
+          comesAcross: "Sample: how the message could read to the person receiving it appears here.",
+          checks: [
+            { aspect: "natural", verdict: "good", note: "Sample: whether it sounds like a real text." },
+            { aspect: "intensity", verdict: "watch", note: "Sample: whether it comes on too strong." },
+            { aspect: "formality", verdict: "good", note: "Sample: whether it reads as stiff." },
+            { aspect: "feeling", verdict: "good", note: "Sample: whether it carries the feeling you intend." },
+            { aspect: "clarity", verdict: "watch", note: "Sample: whether it could be misunderstood." },
+          ],
+          improvements: ["Sample: a concrete improvement appears here."],
+          alternative: "this is a sample alternative, not a rewrite of your message",
+          whyItWorks: "Sample: why the alternative works appears here.",
+          lesson: "Sample: one small takeaway to remember appears here.",
+        },
+      };
+    }
+
+    if (request.mode === "practice") {
+      const opening = request.messages.length === 0;
+      return {
+        ...base,
+        message: opening
+          ? "Demo mode: no AI is connected, so this practice partner only sends pre-written sample lines and cannot react to what you write."
+          : "Demo mode: this is a pre-written sample reply, not a reaction to your message.",
+        suggestions: [],
+        followUps: ["Try a different scenario", "What makes a good first message?"],
+        lesson: null,
+        practice: {
+          partnerReply: opening ? "hey! how's your week going?" : "haha ok fair. what about you?",
+          feedback: opening ? null : "Sample: feedback on the message you just sent appears here.",
+          tryThis: null,
+          finished: false,
+        },
+      };
+    }
+
+    return base;
   }
 }
