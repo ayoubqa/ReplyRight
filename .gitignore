@@ -28,3 +28,6 @@ DerivedData/
 
 # Hosting
 .vercel
+
+# Python caches from ios/scripts
+__pycache__/

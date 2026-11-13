@@ -19,21 +19,6 @@ public enum Tone: String, Codable, CaseIterable, Identifiable, Hashable, Sendabl
         case .charming: return "Charming"
         case .subtle: return "Low-key"
         case .warm: return "Warm"
-        case .moreDirect: return "More direct"
-        case .askQuestion: return "Ask a question"
-        case .keepGoing: return "Keep it going"
-        }
-    }
-
-    /// The label on a tweak control, phrased as a change to the reply.
-    public var tweakTitle: String {
-        switch self {
-        case .playful: return "More playful"
-        case .flirty: return "Flirtier"
-        case .charming: return "More charming"
-        case .warm: return "Warmer"
-        case .subtle: return "More low-key"
-        default: return title
         }
     }
 

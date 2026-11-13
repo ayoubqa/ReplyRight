@@ -238,10 +238,10 @@ final class DecodingTests: XCTestCase {
         XCTAssertTrue(analysis.problem.cannotReplyMessage.contains("paste"))
 
         let older = #"{"canReply":true,"read":"ok"}"#
-        XCTAssertEqual(try JSONDecoder().decode(Analysis.self, from: Data(older.utf8)).problem, .none, "Older servers send no problem")
+        XCTAssertEqual(try JSONDecoder().decode(Analysis.self, from: Data(older.utf8)).problem, AnalysisProblem.none, "Older servers send no problem")
 
         let newer = #"{"canReply":true,"read":"ok","problem":"something_new"}"#
-        XCTAssertEqual(try JSONDecoder().decode(Analysis.self, from: Data(newer.utf8)).problem, .none)
+        XCTAssertEqual(try JSONDecoder().decode(Analysis.self, from: Data(newer.utf8)).problem, AnalysisProblem.none)
 
         XCTAssertEqual(AnalysisProblem.notAConversation.rawValue, "not_a_conversation")
         XCTAssertEqual(AnalysisProblem.partlyReadable.rawValue, "partly_readable")

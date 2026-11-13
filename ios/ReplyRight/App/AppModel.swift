@@ -429,7 +429,7 @@ final class AppModel {
 
     /// Writes everything held about one person to a temporary file the user can save or share.
     func exportPerson(_ id: UUID) -> URL? {
-        guard let person = person(id), let data = store.exportPerson(id) else { return nil }
+        guard let person = self.person(id), let data = store.exportPerson(id) else { return nil }
         let safeName = person.alias.trimmed.replacingOccurrences(of: "/", with: "-")
         let name = "ReplyRight - \(safeName.isEmpty ? "profile" : safeName).json"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)

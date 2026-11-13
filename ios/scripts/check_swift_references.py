@@ -436,10 +436,135 @@ def main() -> int:
                 shown = ", ".join(f"{l}:" for l in labels) or "no arguments"
                 problems.append(f"{path}:{line_of(code, m.start())}: {name}({shown}) matches no initialiser")
 
+    problems.extend(check_switches(files))
+
     for problem in problems:
         print(problem)
     print(f"{len(files)} files, {len(types)} project types, {len(problems)} possible problems")
     return 1 if problems else 0
+
+
+# ---------------------------------------------------------------- switches
+
+def collect_enums(files: dict[str, str]) -> tuple[dict[str, set[str]], list[tuple[str, int, int, str]]]:
+    """Every project enum by full name with its cases, and where each enum's body sits."""
+    enums: dict[str, set[str]] = {}
+    spans: list[tuple[str, int, int, str]] = []  # (path, start, end, full name)
+
+    def walk(path: str, code: str, offset: int, prefix: str) -> None:
+        pos = 0
+        while True:
+            m = re.search(r"\b(struct|class|enum|actor|extension)\s+([A-Z]\w*(?:\.[A-Z]\w*)*)", code[pos:])
+            if not m:
+                return
+            start = pos + m.start()
+            brace = code.find("{", pos + m.end())
+            if brace == -1:
+                return
+            end = match_brace(code, brace)
+            kind, name = m.group(1), m.group(2)
+            full = name if kind == "extension" else (f"{prefix}{name}" if prefix else name)
+            body = code[brace + 1:end]
+            if kind == "enum":
+                cases = enums.setdefault(full, set())
+                for line in top_level_body(body).split("\n"):
+                    cm = re.match(r"\s*(?:indirect\s+)?case\s+(.*)", line)
+                    if cm:
+                        for item in split_params(cm.group(1)):
+                            im = re.match(r"\s*(\w+)", item)
+                            if im:
+                                cases.add(im.group(1))
+            if kind in ("enum", "extension"):
+                spans.append((path, offset + brace, offset + end, full))
+            walk(path, body, offset + brace + 1, f"{full}.")
+            pos = end + 1
+
+    for path, code in files.items():
+        walk(path, code, 0, "")
+    return enums, spans
+
+
+def case_patterns(body: str) -> list[str]:
+    """The pattern of each top-level `case` in a switch body, even when it spans lines."""
+    patterns = []
+    for m in re.finditer(r"(?m)^\s*case\b", body):
+        depth, i = 0, m.end()
+        while i < len(body):
+            ch = body[i]
+            if ch in "([":
+                depth += 1
+            elif ch in ")]":
+                depth -= 1
+            elif ch == ":" and depth == 0 and body[i + 1:i + 2] != ":" and body[i - 1:i] != ":":
+                break
+            i += 1
+        patterns.append(body[m.end():i])
+    return patterns
+
+
+def check_switches(files: dict[str, str]) -> list[str]:
+    """Case labels must belong to the type switched on, and a switch without
+    `default` must cover every case of that type."""
+    enums, spans = collect_enums(files)
+    problems: list[str] = []
+    for path, code in files.items():
+        for m in re.finditer(r"\bswitch\s+([^{\n]+?)\s*\{", code):
+            subject = m.group(1).strip()
+            brace = m.end() - 1
+            end = match_brace(code, brace)
+            body = top_level_body(code[brace + 1:end])
+            line = code.count("\n", 0, m.start()) + 1
+            labels: list[str] = []
+            has_default = bool(re.search(r"(?m)^\s*(?:@unknown\s+)?default\s*:", body))
+            simple = True
+            for pattern in case_patterns(body):
+                pattern = re.sub(r"\bwhere\b[\s\S]*$", "", pattern)
+                for item in split_params(pattern):
+                    item = re.sub(r"^\s*(?:let|var)\s+", "", item).strip()
+                    im = re.match(r"\.(\w+)", item)
+                    if not im:
+                        simple = False
+                        break
+                    labels.append(im.group(1))
+                if not simple:
+                    break
+            if not simple or not labels:
+                continue
+            label_set = set(labels)
+            # `.none` and `.some` may be Optional's own cases, in a switch over an optional enum.
+            if label_set & {"none", "some"} and not any(label_set <= cases for cases in enums.values()):
+                label_set -= {"none", "some"}
+                has_default = has_default or "none" in labels
+                if not label_set:
+                    continue
+
+            if subject == "self":
+                owners = [full for (p, a, b, full) in spans if p == path and a < m.start() < b]
+                owner = owners[-1] if owners else None
+                candidates = [owner] if owner in enums else []
+            else:
+                candidates = [name for name, cases in enums.items() if label_set <= cases]
+                if not candidates:
+                    overlap = sorted(
+                        ((len(label_set & cases), name) for name, cases in enums.items() if len(label_set & cases) >= 2),
+                        reverse=True,
+                    )
+                    # A system enum can share a few case names with a project enum, so only report a near match.
+                    if overlap and overlap[0][0] * 4 >= len(label_set) * 3:
+                        name = overlap[0][1]
+                        missing = sorted(label_set - enums[name])
+                        problems.append(f"{path}:{line}: switch {subject}: {', '.join('.' + x for x in missing)} are not cases of {name}")
+                    continue
+
+            for name in candidates:
+                cases = enums[name]
+                stray = sorted(label_set - cases)
+                if stray:
+                    problems.append(f"{path}:{line}: switch {subject}: {', '.join('.' + x for x in stray)} are not cases of {name}")
+                elif not has_default and len(candidates) == 1 and cases - label_set:
+                    uncovered = sorted(cases - label_set)
+                    problems.append(f"{path}:{line}: switch {subject} over {name} has no default and misses {', '.join('.' + x for x in uncovered)}")
+    return problems
 
 
 if __name__ == "__main__":

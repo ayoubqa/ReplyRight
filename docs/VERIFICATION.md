@@ -133,7 +133,7 @@ Checks that work without Xcode:
 ```bash
 pip install tree-sitter tree-sitter-swift
 python3 ios/scripts/check_swift_syntax.py        # syntax only
-python3 ios/scripts/check_swift_references.py    # types, members and argument labels; a heuristic, not a compiler
+python3 ios/scripts/check_swift_references.py    # types, members, argument labels and switch cases; a heuristic, not a compiler
 python3 ios/scripts/check_xcodeproj.py           # project file structure
 ```
 

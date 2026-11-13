@@ -127,7 +127,7 @@ public struct Analysis: Codable, Equatable, Sendable {
         headsUp = try c.decodeIfPresent(String.self, forKey: .headsUp)
         // An unknown value from a newer server is treated as readable rather than failing the decode.
         let rawProblem = (try? c.decodeIfPresent(String.self, forKey: .problem)) ?? nil
-        problem = rawProblem.flatMap(AnalysisProblem.init(rawValue:)) ?? .none
+        problem = rawProblem.flatMap(AnalysisProblem.init(rawValue:)) ?? AnalysisProblem.none
     }
 }
 
