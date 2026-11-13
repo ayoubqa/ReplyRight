@@ -8,7 +8,7 @@ Nothing is uploaded until the user taps a button that asks for something: Read t
 
 | Sent | When | Kept by the server |
 | --- | --- | --- |
-| Screenshots (resized, re-encoded, metadata removed on the device) | Reading a conversation | No. Held in memory for one request, then discarded |
+| Screenshots (resized, re-encoded, metadata removed on the device, and checked again on the server) | Reading a conversation | No. Decoded and, when needed, re-encoded in memory for one request, then discarded. Nothing is written to disk and the image library's cache is off |
 | Conversation text, draft, custom instruction | The request that needs them | No |
 | My Voice (a trimmed copy) | With each request | No |
 | A person's name, where things stand, and the parts of their profile the user switched on | Only with a request where the user picked that person | No |

@@ -34,15 +34,16 @@ cd backend
 npm run verify
 ```
 
-This replays every request the iOS app makes, in the exact shapes the app uses, including the multipart screenshot upload. It prints one line per check and a summary:
+This replays every request the iOS app makes, in the exact shapes the app uses, including the multipart screenshot upload. The screenshots are made-up chats in `backend/scripts/fixtures` (one readable, a second that continues it, one blurred past reading, one landscape with no chat in it), plus a damaged copy built on the fly. In live mode the script also checks what was read: the transcript has to contain the screenshots' messages, and the blurred and unrelated images have to be reported as such instead of being answered. It prints one line per check and a summary:
 
 ```
 PASS  status                             HTTP 200 in 140 ms
 PASS  analyze (pasted text)              HTTP 200 in 373 ms
-PASS  analyze (screenshot upload)        HTTP 200 in 39 ms
+PASS  analyze (one screenshot)           HTTP 200 in 15 ms
+PASS  analyze (two screenshots)          HTTP 200 in 17 ms
 ...
 AI mode            : demo
-Result             : 15 of 15 checks passed
+Result             : 21 of 21 checks passed
 ```
 
 - All PASS and `AI mode: demo`: the server works and has no AI key. Go to step 2.
@@ -75,7 +76,8 @@ This runs the same checks, adds one small real AI call through the probe route, 
 | `credentials` | The key was rejected, or may not use this model | Check `ANTHROPIC_API_KEY` |
 | `billing` | The account has no credit | Add credit in the Anthropic console |
 | `model` | The model name is not available to this key | Check `AI_MODEL` (default `claude-opus-5-5`) |
-| `request` | The provider rejected the request itself | Read the server terminal: in development it prints the provider's message |
+| `request` | The provider rejected the request itself (returned as `500 internal`) | Read the server terminal: in development it prints the provider's message |
+| `image` | The provider could not use a screenshot (returned as `422 unsupported_media`) | Every image is decoded and re-checked on the server first, so this means an unusual file. The server terminal names the field |
 | `overloaded` / `timeout` | The provider is busy | Try again |
 | `network` | The server cannot reach the provider | Check the server's internet access |
 
@@ -102,6 +104,8 @@ Run the **ReplyRight** scheme on an iPhone simulator.
 
 `localhost` on a phone means the phone. Start the server with `npm run dev -- --hostname 0.0.0.0`, then either set `RR_API_DEV_HOST` in `ios/Config/Shared.xcconfig` to your Mac's network name (`my-mac.local:3000`), or type `http://my-mac.local:3000` in Connection. The phone and the Mac must be on the same Wi-Fi, and iOS will ask for local network permission the first time.
 
+Running the script twice within a minute can trip the per-address rate limit (`RATE_LIMIT_PER_MINUTE`, 30 by default); it says so when that happens.
+
 ## 5. Check the failure states
 
 | Do this | Expect |
@@ -112,11 +116,13 @@ Run the **ReplyRight** scheme on an iPhone simulator.
 | Put a wrong key in `.env.local`, restart, tap Read it | "That didn't go through". Connection says the AI isn't answering and names the key as the cause |
 | Turn on Airplane Mode | "You're offline" |
 | Use up the free allowance | The paywall opens. Nothing is charged for failed requests |
+| Share a blurred screenshot, or a photo that is not a chat | The read says it couldn't read it, or that it isn't a conversation, and offers another screenshot or pasting the text. No replies are written |
+| Share a damaged image file | "One of the screenshots couldn't be opened" before anything is sent to the AI |
 
 ## 6. Automated tests
 
 ```bash
-cd backend && npm test                              # 77 server tests, no network
+cd backend && npm test                              # 109 server tests, no network
 cd ios/Packages/ReplyRightKit && swift test         # 120 unit tests, on a Mac
 ```
 
@@ -135,8 +141,9 @@ python3 ios/scripts/check_xcodeproj.py           # project file structure
 
 | | State |
 | --- | --- |
-| Server: type check, lint, production build, 77 tests | Verified where this was written |
-| Server: every request shape the app sends, over HTTP, in demo mode (`npm run verify`) | Verified where this was written |
+| Server: type check, lint, production build, 109 tests | Verified where this was written |
+| Server: every request shape the app sends, over HTTP, in demo mode (`npm run verify`, 21 checks) | Verified where this was written |
+| Server: screenshot decoding, normalisation and refusal of damaged, unsupported, tiny and oversized images | Verified where this was written (unit and route tests, and `verify` against both `next dev` and a production build) |
 | Server: live AI calls | **Not verified.** No key was available. Do step 3 |
 | App, keyboard and share sheet: compile, run, unit tests, UI tests | **Not verified.** Written without Xcode. All Swift files parse, the project file is structurally valid, and a text-level check of types, members and argument labels passes. A compiler has not seen this revision |
 | Keyboard and share sheet on a device, App Groups, Full Access | **Not verified** |

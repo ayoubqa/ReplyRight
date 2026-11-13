@@ -246,6 +246,12 @@ async function runTask<Schema extends z.ZodType, Result>(
           return fail(422, "ai_declined", error.message, { reason: error.reason });
         case "bad_output":
           return fail(502, "ai_bad_output", error.message, { reason: error.reason });
+        case "rejected_input":
+          // The provider could not use something the user sent (an image it cannot read).
+          return fail(422, "unsupported_media", error.message, { reason: error.reason });
+        case "misconfigured":
+          // The provider refused the request itself. That is a bug or a setting on our side.
+          return fail(500, "internal", error.message, { reason: error.reason });
         case "unavailable":
           return fail(503, "ai_unavailable", error.message, { reason: error.reason });
       }

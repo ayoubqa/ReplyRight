@@ -88,3 +88,8 @@ export function getProvider(): AiProvider {
 export function resetProviderCache() {
   cached = null;
 }
+
+/** For tests: use this provider until the cache is reset. */
+export function setProviderForTests(provider: AiProvider) {
+  cached = provider;
+}

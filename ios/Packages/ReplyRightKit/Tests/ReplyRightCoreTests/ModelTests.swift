@@ -230,6 +230,23 @@ final class DecodingTests: XCTestCase {
         XCTAssertNil(analysis.latestMessage)
     }
 
+    func testAnalysisSaysWhetherTheScreenshotCouldBeRead() throws {
+        let unreadable = #"{"canReply":false,"read":"Too blurry to read.","transcript":[],"problem":"unreadable"}"#
+        let analysis = try JSONDecoder().decode(Analysis.self, from: Data(unreadable.utf8))
+        XCTAssertEqual(analysis.problem, .unreadable)
+        XCTAssertTrue(analysis.problem.asksForBetterInput)
+        XCTAssertTrue(analysis.problem.cannotReplyMessage.contains("paste"))
+
+        let older = #"{"canReply":true,"read":"ok"}"#
+        XCTAssertEqual(try JSONDecoder().decode(Analysis.self, from: Data(older.utf8)).problem, .none, "Older servers send no problem")
+
+        let newer = #"{"canReply":true,"read":"ok","problem":"something_new"}"#
+        XCTAssertEqual(try JSONDecoder().decode(Analysis.self, from: Data(newer.utf8)).problem, .none)
+
+        XCTAssertEqual(AnalysisProblem.notAConversation.rawValue, "not_a_conversation")
+        XCTAssertEqual(AnalysisProblem.partlyReadable.rawValue, "partly_readable")
+    }
+
     func testStatusResponse() throws {
         let json = #"{"apiVersion":1,"mode":"live","provider":"anthropic","supportsImages":true,"plans":{"free":{"dailyGenerations":10,"dailyCoachMessages":3,"intents":["natural","flirt"],"voiceSamples":false},"pro":{"dailyGenerations":400,"dailyCoachMessages":200,"intents":["natural","flirt","ask_out"],"voiceSamples":true}},"usage":\#(usageJSON),"extraField":[1,2,3]}"#
         let status = try JSONDecoder().decode(StatusResponse.self, from: Data(json.utf8))

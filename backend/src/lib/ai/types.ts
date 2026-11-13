@@ -13,10 +13,16 @@ import type {
   RepliesResult,
 } from "@/lib/domain/contracts";
 
-/** A screenshot held in memory for the duration of a single request. Never persisted. */
+/**
+ * A screenshot held in memory for the duration of a single request. Never
+ * persisted. It has been fully decoded on the server, so the bytes are a valid
+ * image of `mediaType`, upright and within the provider's limits.
+ */
 export interface TransientImage {
   mediaType: AcceptedImageType;
   base64: string;
+  width: number;
+  height: number;
 }
 
 export type AiTask = "analyze" | "replies" | "refine" | "coach";
@@ -48,7 +54,15 @@ export class ProviderError extends Error {
   readonly reason: FailureReason;
 
   constructor(
-    public readonly kind: "unavailable" | "declined" | "bad_output" | "rate_limited",
+    /**
+     * unavailable     the provider cannot answer right now (safe to retry)
+     * declined        the model refused this content
+     * bad_output      the model's answer was unusable (cut short, or not in the expected shape)
+     * rejected_input  the provider refused something the user sent, such as an image it cannot read
+     * misconfigured   the provider refused the request itself: a server bug or setting, not the user's fault
+     * rate_limited    too many requests
+     */
+    public readonly kind: "unavailable" | "declined" | "bad_output" | "rejected_input" | "misconfigured" | "rate_limited",
     message: string,
     options?: { cause?: unknown; reason?: FailureReason },
   ) {

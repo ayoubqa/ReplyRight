@@ -59,6 +59,16 @@ export const analyzeRequestSchema = z.object({
 });
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
 
+/**
+ * Whether the shared material could be read.
+ *   none                everything was readable
+ *   partly_readable     some of it was cut off, blurry or too small; only the readable part was transcribed
+ *   unreadable          the screenshot is too blurry, dark, cropped or small to read
+ *   not_a_conversation  readable, but not a messaging conversation
+ */
+export const ANALYSIS_PROBLEMS = ["none", "partly_readable", "unreadable", "not_a_conversation"] as const;
+export type AnalysisProblem = (typeof ANALYSIS_PROBLEMS)[number];
+
 export const analysisSchema = z.object({
   canReply: z
     .boolean()
@@ -82,6 +92,9 @@ export const analysisSchema = z.object({
   opportunity: z.string().describe("One sentence on a good angle for the next message."),
   suggestedIntents: z.array(z.enum(INTENTS)).describe("2-3 intent ids that fit this moment, best first."),
   headsUp: z.string().nullable().describe("A brief, kind note when something deserves care. Otherwise null."),
+  problem: z
+    .enum(ANALYSIS_PROBLEMS)
+    .describe("Whether the shared screenshots or text could be read. Use none when everything was readable."),
 });
 export type Analysis = z.infer<typeof analysisSchema>;
 
@@ -316,6 +329,7 @@ export type FailureReason =
   | "rate_limit"
   | "refusal"
   | "output"
+  | "image"
   | "unknown";
 
 export interface ApiErrorBody {

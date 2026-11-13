@@ -6,6 +6,7 @@ import type { z } from "zod";
 import {
   analysisSchema,
   coachResultSchema,
+  LIMITS,
   refineResultSchema,
   repliesResultSchema,
   type Analysis,
@@ -85,12 +86,7 @@ export class AnthropicProvider implements AiProvider {
     const parsed = await this.run("analyze", ANALYZE_SYSTEM, analysisSchema, [
       { role: "user", content: [...imageBlocks(images), { type: "text", text: buildAnalyzePrompt(request, images.length) }] },
     ]);
-    return {
-      ...parsed,
-      observations: parsed.observations.slice(0, 4),
-      assumptions: parsed.assumptions.slice(0, 3),
-      suggestedIntents: [...new Set(parsed.suggestedIntents)].slice(0, 3),
-    };
+    return normalizeAnalysis(parsed);
   }
 
   async replies({
@@ -229,13 +225,58 @@ function coachClosingTurn(request: CoachRequest): string | null {
   return null;
 }
 
-function imageBlocks(images: TransientImage[]): BetaContentBlockParam[] {
+/**
+ * Screenshots as image content blocks, in the order the user attached them.
+ * They come before the text that refers to them, as the API recommends.
+ */
+export function imageBlocks(images: TransientImage[]): BetaContentBlockParam[] {
   return images.map(
     (image): BetaContentBlockParam => ({
       type: "image",
       source: { type: "base64", media_type: image.mediaType, data: image.base64 },
     }),
   );
+}
+
+const clean = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/**
+ * Makes the analysis consistent before it reaches the app. Structured output
+ * guarantees the shape; this enforces what the schema cannot express.
+ *
+ * It removes and trims, and it refuses an answer with nothing to show. It never
+ * adds content the model did not write.
+ */
+export function normalizeAnalysis(parsed: Analysis): Analysis {
+  const read = parsed.read.trim();
+  if (!read) {
+    throw new ProviderError("bad_output", "Something came back garbled. Please try again.", { reason: "output" });
+  }
+  const transcript = parsed.transcript
+    .map((line) => ({ speaker: line.speaker, text: line.text.trim().slice(0, LIMITS.transcriptLineChars) }))
+    .filter((line) => line.text.length > 0)
+    .slice(-LIMITS.transcriptLines);
+  const latestMessage = parsed.latestMessage?.trim() || null;
+  // Nothing can be answered from a screenshot that could not be read, or from something that is not a conversation.
+  const unusable = parsed.problem === "unreadable" || parsed.problem === "not_a_conversation";
+  return {
+    ...parsed,
+    canReply: parsed.canReply && !unusable,
+    read,
+    transcript,
+    latestMessage,
+    toneLabel: clean(parsed.toneLabel),
+    observations: parsed.observations.map(clean).filter(Boolean).slice(0, 4),
+    assumptions: parsed.assumptions.map(clean).filter(Boolean).slice(0, 3),
+    opportunity: parsed.opportunity.trim(),
+    suggestedIntents: [...new Set(parsed.suggestedIntents)].slice(0, 3),
+    headsUp: parsed.headsUp?.trim() || null,
+  };
+}
+
+/** True when the API refused the request because of an image in it. */
+function isImageRejection(error: InstanceType<typeof Anthropic.BadRequestError>): boolean {
+  return /\bimage\b|media_type|base64/i.test(error.message);
 }
 
 /**
@@ -289,8 +330,18 @@ function mapAnthropicError(error: unknown): ProviderError {
       console.error(`[replyright] The Anthropic account has no credit (${describe(error)}).`);
       return new ProviderError("unavailable", notSetUp, { cause: error, reason: "billing" });
     }
+    if (isImageRejection(error)) {
+      // Images are fully decoded and normalised before they are sent, so this
+      // should be rare. The message names the field, never the image content.
+      console.error(`[replyright] Anthropic could not use an image (${describe(error)}).`);
+      return new ProviderError(
+        "rejected_input",
+        "I couldn't read one of those screenshots. Try taking it again, or paste the text instead.",
+        { cause: error, reason: "image" },
+      );
+    }
     console.error(`[replyright] Anthropic rejected the request (${describe(error)}).`);
-    return new ProviderError("bad_output", "I couldn't work with that. Try a clearer screenshot or fewer images.", {
+    return new ProviderError("misconfigured", "Something went wrong on our side. Please try again.", {
       cause: error,
       reason: "request",
     });

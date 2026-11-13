@@ -185,6 +185,7 @@ export class DemoProvider implements AiProvider {
       opportunity: "Sample: a suggested angle for your next message appears here.",
       suggestedIntents: ["natural", "laugh", "flirt"],
       headsUp: null,
+      problem: "none",
     };
   }
 

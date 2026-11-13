@@ -28,7 +28,7 @@ struct UnderstandingView: View {
                     if analysis.canReply {
                         IntentSection()
                     } else {
-                        cannotReply
+                        cannotReply(analysis.problem)
                     }
                 }
             }
@@ -52,14 +52,15 @@ struct UnderstandingView: View {
         .toolbar(.hidden, for: .tabBar)
     }
 
-    private var cannotReply: some View {
+    private func cannotReply(_ problem: AnalysisProblem) -> some View {
         VStack(alignment: .leading, spacing: RRSpace.m) {
-            Text("I'd rather not write replies for this one. If I've misread it, try sharing a clearer part of the conversation.")
+            Text(problem.cannotReplyMessage)
                 .rrText(.callout)
                 .foregroundStyle(Color.rrTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("understanding-problem")
             HStack(spacing: RRSpace.xs) {
-                Button("Try again") {
+                Button(problem.asksForBetterInput ? "Use another screenshot or paste" : "Try again") {
                     app.homePath.removeLast()
                 }
                 .buttonStyle(.rrSecondaryCompact)

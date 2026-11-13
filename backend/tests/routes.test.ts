@@ -5,10 +5,12 @@ import { POST as refine } from "@/app/api/v1/refine/route";
 import { POST as replies } from "@/app/api/v1/replies/route";
 import { POST as probe } from "@/app/api/v1/diagnostics/probe/route";
 import { GET as status } from "@/app/api/v1/status/route";
-import { resetProviderCache } from "@/lib/ai";
+import { resetProviderCache, setProviderForTests } from "@/lib/ai";
+import { ProviderError, type AiProvider, type TransientImage } from "@/lib/ai/types";
 import { aiHealth, recordAiFailure, recordAiSuccess, resetAiHealth } from "@/lib/ai/health";
 import { resetEntitlementCache } from "@/lib/server/entitlements";
 import { resetUsage } from "@/lib/server/usage";
+import { asUint8, garbledJpeg, OLD_VERIFY_FIXTURE, screenshot } from "./helpers/images";
 import { xcodeTransaction } from "./helpers/storekit";
 
 /** Route handlers exercised directly, with the demo provider (no network, no key). */
@@ -32,7 +34,7 @@ function multipart(path: string, payload: unknown, files: { name: string; bytes:
   for (const file of files) form.append("images", new File([file.bytes], file.name, { type: file.type }));
   return new Request(`http://test${path}`, { method: "POST", headers: headers(), body: form });
 }
-// Smallest valid PNG (1x1).
+// Smallest valid PNG (1x1). Fine where a request is refused before images are read.
 const PNG = Uint8Array.from(
   Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"),
 );
@@ -167,7 +169,8 @@ describe("POST /api/v1/analyze", () => {
   });
 
   it("accepts screenshots as multipart and validates them by content", async () => {
-    const ok = await analyze(multipart("/api/v1/analyze", {}, [{ name: "chat.png", bytes: PNG, type: "image/png" }]));
+    const shot = asUint8(await screenshot("png"));
+    const ok = await analyze(multipart("/api/v1/analyze", {}, [{ name: "chat.png", bytes: shot, type: "image/png" }]));
     expect(ok.status).toBe(200);
 
     const fake = await analyze(
@@ -176,7 +179,7 @@ describe("POST /api/v1/analyze", () => {
     expect(fake.status).toBe(400);
     expect((await fake.json()).error.code).toBe("unsupported_media");
 
-    const many = Array.from({ length: 5 }, (_, i) => ({ name: `${i}.png`, bytes: PNG, type: "image/png" }));
+    const many = Array.from({ length: 5 }, (_, i) => ({ name: `${i}.png`, bytes: shot, type: "image/png" }));
     expect((await analyze(multipart("/api/v1/analyze", {}, many))).status).toBe(400);
   });
 
@@ -359,5 +362,132 @@ describe("rate limiting", () => {
     expect(blocked.status).toBe(429);
     expect((await blocked.json()).error.code).toBe("rate_limited");
     expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+});
+
+// ------------------------------------------------------------------ screenshots with a live provider
+
+/**
+ * A stand-in for the live provider, so the route, the image pipeline and the
+ * error mapping run exactly as in production without calling the network.
+ */
+function liveProvider(analyze: AiProvider["analyze"]): AiProvider & { seen: TransientImage[][] } {
+  const seen: TransientImage[][] = [];
+  return {
+    id: "anthropic",
+    mode: "live",
+    supportsImages: true,
+    seen,
+    modelFor: () => "claude-opus-5-5",
+    analyze: async (input) => {
+      seen.push(input.images);
+      return analyze(input);
+    },
+    replies: async ({ images }) => {
+      seen.push(images);
+      return { note: "ok", replies: [{ style: "Natural", text: "yes!", why: "Easy." }], headsUp: null };
+    },
+    refine: async () => ({ options: [], note: null }),
+    coach: async () => ({ message: "ok", suggestions: [], followUps: [], lesson: null, review: null, practice: null, headsUp: null }),
+  };
+}
+
+const readable = async () => ({
+  canReply: true,
+  transcript: [{ speaker: "them" as const, text: "are we still on for friday?" }],
+  latestMessage: "are we still on for friday?",
+  latestFromMe: false,
+  read: "They're checking in about Friday.",
+  toneLabel: "Friendly",
+  observations: [],
+  assumptions: [],
+  opportunity: "",
+  suggestedIntents: ["natural" as const],
+  headsUp: null,
+  problem: "none" as const,
+});
+
+describe("screenshots end to end", () => {
+  const upload = (path: string, payload: unknown, files: Uint8Array<ArrayBuffer>[]) =>
+    multipart(path, payload, files.map((bytes, i) => ({ name: `shot-${i + 1}.jpg`, bytes, type: "image/jpeg" })));
+
+  it("passes several valid screenshots to the provider as decoded images, in order", async () => {
+    const provider = liveProvider(readable);
+    setProviderForTests(provider);
+    const first = asUint8(await screenshot("jpeg", { width: 700, height: 1300 }));
+    const second = asUint8(await screenshot("png", { width: 900, height: 1300 }));
+    const res = await analyze(upload("/api/v1/analyze", { conversation: "" }, [first, second]));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.mode).toBe("live");
+    expect(body.result.problem).toBe("none");
+    expect(provider.seen[0].map((image) => [image.mediaType, image.width])).toEqual([
+      ["image/jpeg", 700],
+      ["image/png", 900],
+    ]);
+  });
+
+  it("refuses a damaged screenshot before it reaches the provider, and says how to fix it", async () => {
+    const provider = liveProvider(readable);
+    setProviderForTests(provider);
+    for (const bytes of [asUint8(await garbledJpeg()), asUint8(OLD_VERIFY_FIXTURE)]) {
+      const res = await analyze(upload("/api/v1/analyze", {}, [bytes]));
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.code).toBe("unsupported_media");
+      expect(body.error.message).toMatch(/screenshot/i);
+    }
+    expect(provider.seen).toHaveLength(0);
+  });
+
+  it("does not spend a reply on a screenshot that cannot be read", async () => {
+    setProviderForTests(liveProvider(readable));
+    const res = await replies(upload("/api/v1/replies", { intent: "natural" }, [asUint8(await garbledJpeg())]));
+    expect(res.status).toBe(400);
+    const usage = await (await status(new Request("http://test/api/v1/status", { headers: headers() }))).json();
+    expect(usage.usage.generations.used).toBe(0);
+  });
+
+  it("reports an image the provider refuses as a problem with the screenshot, not with the AI", async () => {
+    setProviderForTests(
+      liveProvider(async () => {
+        throw new ProviderError("rejected_input", "I couldn't read one of those screenshots. Try taking it again, or paste the text instead.", {
+          reason: "image",
+        });
+      }),
+    );
+    const res = await analyze(upload("/api/v1/analyze", {}, [asUint8(await screenshot("jpeg"))]));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toMatchObject({ code: "unsupported_media", reason: "image" });
+    expect(body.error.message).toMatch(/paste the text/i);
+  });
+
+  it("reports a request the provider refuses as our problem", async () => {
+    setProviderForTests(
+      liveProvider(async () => {
+        throw new ProviderError("misconfigured", "Something went wrong on our side. Please try again.", { reason: "request" });
+      }),
+    );
+    const res = await analyze(upload("/api/v1/analyze", {}, [asUint8(await screenshot("jpeg"))]));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toMatchObject({ code: "internal", reason: "request" });
+  });
+
+  it("returns an unreadable screenshot as an analysis the app can explain", async () => {
+    setProviderForTests(
+      liveProvider(async () => ({
+        ...(await readable()),
+        canReply: false,
+        transcript: [],
+        latestMessage: null,
+        read: "I can't make out the messages: the screenshot is too blurry. A sharper one, or pasting the text, will work.",
+        problem: "unreadable",
+      })),
+    );
+    const res = await analyze(upload("/api/v1/analyze", {}, [asUint8(await screenshot("jpeg"))]));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result).toMatchObject({ canReply: false, problem: "unreadable", transcript: [] });
   });
 });

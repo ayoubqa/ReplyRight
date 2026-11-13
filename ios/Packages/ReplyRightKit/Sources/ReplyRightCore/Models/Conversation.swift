@@ -33,6 +33,35 @@ public struct TranscriptLine: Codable, Identifiable, Equatable, Hashable, Sendab
     }
 }
 
+/// Whether the shared screenshots or text could be read. Mirrors `ANALYSIS_PROBLEMS` in the backend.
+public enum AnalysisProblem: String, Codable, Sendable {
+    /// Everything was readable.
+    case none
+    /// Some messages were cut off, blurry or too small. Only the readable ones were used.
+    case partlyReadable = "partly_readable"
+    /// Too blurry, dark, small or cropped to read.
+    case unreadable
+    /// Readable, but not a messaging conversation.
+    case notAConversation = "not_a_conversation"
+
+    /// What to tell the user when nothing can be written for this one.
+    public var cannotReplyMessage: String {
+        switch self {
+        case .unreadable:
+            return "I couldn't read the messages in that screenshot. A sharper screenshot, or pasting the text, will work."
+        case .notAConversation:
+            return "That doesn't look like a conversation. Share a screenshot of the chat itself, or paste the messages."
+        case .none, .partlyReadable:
+            return "I'd rather not write replies for this one. If I've misread it, try sharing a clearer part of the conversation."
+        }
+    }
+
+    /// True when another screenshot or pasted text is the way forward.
+    public var asksForBetterInput: Bool {
+        self == .unreadable || self == .notAConversation
+    }
+}
+
 /// What ReplyRight understood from a shared conversation.
 ///
 /// `observations` are things visible in the messages. `assumptions` are things
@@ -50,6 +79,8 @@ public struct Analysis: Codable, Equatable, Sendable {
     public var opportunity: String
     public var suggestedIntents: [Intent]
     public var headsUp: String?
+    /// Whether the material could be read. Older servers do not send it, which means `.none`.
+    public var problem: AnalysisProblem
 
     public init(
         canReply: Bool,
@@ -62,7 +93,8 @@ public struct Analysis: Codable, Equatable, Sendable {
         assumptions: [String],
         opportunity: String,
         suggestedIntents: [Intent],
-        headsUp: String?
+        headsUp: String?,
+        problem: AnalysisProblem = .none
     ) {
         self.canReply = canReply
         self.transcript = transcript
@@ -75,6 +107,7 @@ public struct Analysis: Codable, Equatable, Sendable {
         self.opportunity = opportunity
         self.suggestedIntents = suggestedIntents
         self.headsUp = headsUp
+        self.problem = problem
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,6 +125,9 @@ public struct Analysis: Codable, Equatable, Sendable {
         let rawIntents = try c.decodeIfPresent([String].self, forKey: .suggestedIntents) ?? []
         suggestedIntents = rawIntents.compactMap(Intent.init(rawValue:))
         headsUp = try c.decodeIfPresent(String.self, forKey: .headsUp)
+        // An unknown value from a newer server is treated as readable rather than failing the decode.
+        let rawProblem = (try? c.decodeIfPresent(String.self, forKey: .problem)) ?? nil
+        problem = rawProblem.flatMap(AnalysisProblem.init(rawValue:)) ?? .none
     }
 }
 

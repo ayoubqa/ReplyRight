@@ -12,9 +12,17 @@
  *   node scripts/verify.mjs --require-live        # fail unless the server answers with live AI
  *
  * It prints status codes, timings and field names. It never prints an API
- * key, and the only "conversation" it sends is the fixed sample below.
+ * key. The only conversations it sends are the fixed sample below and the
+ * made-up screenshots in scripts/fixtures (see make-fixtures.mjs).
+ *
+ * In live mode the screenshot checks also look at what was read: the
+ * transcript has to contain words from the screenshots, and a blurred or
+ * unrelated image has to be reported as such instead of being answered.
  */
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith("--")));
@@ -30,8 +38,22 @@ const headers = {
 
 const SAMPLE = "Them: ok be honest, pineapple on pizza?\nMe: depends who's asking\nThem: someone deciding whether we can be friends";
 
-// A 16x16 grey JPEG. Enough to exercise the upload path; it is not a conversation.
-const JPEG = Buffer.from(
+// Made-up chat screenshots, saved as JPEG the way the iOS app sends them.
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+const shot = (name) => readFileSync(join(fixtures, name));
+const CHAT_1 = shot("chat-1.jpg"); // pineapple on pizza
+const CHAT_2 = shot("chat-2.jpg"); // friday, ramen
+const BLURRED = shot("chat-blurred.jpg");
+const NOT_A_CHAT = shot("not-a-chat.jpg");
+
+// chat-1.jpg with 400 bytes of its image data overwritten: the header and end
+// marker are intact, so it still starts like a JPEG, but it cannot be decoded.
+const DAMAGED = Buffer.from(CHAT_1);
+for (let i = 0; i < 400; i++) DAMAGED[Math.floor(DAMAGED.length * 0.4) + i] = (i * 37) & 0xff;
+
+// The 16x16 JPEG this script used to upload. Its scan data is corrupt, which a
+// lenient decoder hides but the AI provider does not. It must be refused up front.
+const OLD_FIXTURE = Buffer.from(
   "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAAQABABAREA/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAA/AKpgA//Z",
   "base64",
 );
@@ -139,11 +161,78 @@ const person = { alias: "Sam", stage: "talking", notes: "", metAt: "climbing gym
 
 const analysis = await call("analyze (pasted text)", "/api/v1/analyze", json({ conversation: SAMPLE, locale: "en" }), envelope({ canReply: "boolean", read: "string" }));
 
+const live = mode === "live";
+const ANALYSIS = { canReply: "boolean", read: "string", transcript: "array", problem: "string" };
+const said = (result) => (result.transcript ?? []).map((line) => line.text.toLowerCase()).join(" \n ");
+
+/** In live mode, checks what was read from the screenshots. Demo mode does not read them. */
+function readBack(expect) {
+  return envelope(ANALYSIS, (result) => {
+    if (!live) return null;
+    return expect(result);
+  });
+}
+
 await call(
-  "analyze (screenshot upload)",
+  "analyze (one screenshot)",
   "/api/v1/analyze",
-  multipart({ conversation: "", locale: "en" }, [JPEG]),
-  envelope({ canReply: "boolean", read: "string" }),
+  multipart({ conversation: "", locale: "en" }, [CHAT_1]),
+  readBack((result) => {
+    if (!result.canReply) return `the screenshot was not read (problem: ${result.problem}): ${result.read}`;
+    if (!/pizza/.test(said(result))) return "the transcript does not contain the screenshot's messages";
+    if (result.transcript.length < 3) return `only ${result.transcript.length} messages were read, expected 4`;
+    return null;
+  }),
+);
+
+await call(
+  "analyze (two screenshots)",
+  "/api/v1/analyze",
+  multipart({ conversation: "", locale: "en" }, [CHAT_1, CHAT_2]),
+  readBack((result) => {
+    const text = said(result);
+    if (!result.canReply) return `the screenshots were not read (problem: ${result.problem})`;
+    if (!/pizza/.test(text) || !/friday/.test(text)) return "the transcript is missing messages from one of the screenshots";
+    if (!/ramen/i.test(result.latestMessage ?? "")) return "the latest message should be the ramen question from the second screenshot";
+    return null;
+  }),
+);
+
+await call(
+  "analyze (blurred screenshot)",
+  "/api/v1/analyze",
+  multipart({ conversation: "", locale: "en" }, [BLURRED]),
+  readBack((result) => {
+    if (result.canReply) return "a screenshot nobody can read was treated as readable";
+    if (!["unreadable", "partly_readable"].includes(result.problem)) return `expected problem unreadable, got ${result.problem}`;
+    return null;
+  }),
+);
+
+await call(
+  "analyze (not a conversation)",
+  "/api/v1/analyze",
+  multipart({ conversation: "", locale: "en" }, [NOT_A_CHAT]),
+  readBack((result) => {
+    if (result.canReply) return "a picture with no conversation in it was treated as a conversation";
+    if (!["not_a_conversation", "unreadable"].includes(result.problem)) return `expected problem not_a_conversation, got ${result.problem}`;
+    return null;
+  }),
+);
+
+const refused = (response, body) =>
+  response.status === 400 && body?.error?.code === "unsupported_media" && /screenshot/i.test(body.error.message ?? "")
+    ? null
+    : "expected 400 unsupported_media with a message about the screenshot";
+
+await call("refuses a damaged screenshot", "/api/v1/analyze", multipart({ conversation: "", locale: "en" }, [DAMAGED]), refused);
+await call("refuses the old corrupt test image", "/api/v1/analyze", multipart({ conversation: "", locale: "en" }, [OLD_FIXTURE]), refused);
+
+await call(
+  "replies (straight from a screenshot)",
+  "/api/v1/replies",
+  multipart({ kind: "reply", conversation: "", transcript: [], intent: "natural", instruction: "", draft: "", avoid: [], locale: "en" }, [CHAT_2]),
+  envelope({ note: "string", replies: "array" }, (result) => suggestions(result.replies, 3)),
 );
 
 const transcript = (analysis?.result?.transcript ?? []).filter((line) => line.text);
@@ -237,6 +326,9 @@ console.log(`Server environment : ${status.environment ?? "unknown"}`);
 console.log(`AI mode            : ${mode}${mode === "live" && status.ai?.models ? ` (${[...new Set(Object.values(status.ai.models))].join(", ")})` : ""}`);
 console.log(`Result             : ${results.length - failed.length} of ${results.length} checks passed`);
 
+if (results.some((r) => /code=rate_limited/.test(r.detail))) {
+  console.log("\nSome requests were rate limited. The server allows RATE_LIMIT_PER_MINUTE requests a minute per address (30 by default); wait a minute and run again.");
+}
 if (mode !== "live") {
   console.log("\nThis server is in DEMO MODE: it has no ANTHROPIC_API_KEY, so every answer above is a labelled sample.");
   console.log("The request and response formats are verified. Live AI is NOT verified by this run.");

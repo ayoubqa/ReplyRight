@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AnthropicProvider } from "@/lib/ai/anthropic-provider";
+import { AnthropicProvider, normalizeAnalysis } from "@/lib/ai/anthropic-provider";
 import { aiHealth, resetAiHealth } from "@/lib/ai/health";
 import { ProviderError } from "@/lib/ai/types";
-import { coachRequestSchema, refineRequestSchema } from "@/lib/domain/contracts";
+import { analyzeRequestSchema, coachRequestSchema, refineRequestSchema, type Analysis } from "@/lib/domain/contracts";
 
 /**
  * The live provider with the network call replaced, so its own logic can be
@@ -71,12 +71,12 @@ describe("AnthropicProvider request", () => {
     expect(aiHealth().state).toBe("ok");
   });
 
-  it("does not retry other bad requests", async () => {
+  it("does not retry other bad requests, and does not blame the model's output for them", async () => {
     const { provider, spy } = setup(async () => {
-      throw apiError(400, "messages.0.content.0.image.source.base64: invalid base64 data");
+      throw apiError(400, "output_config.effort: Input should be 'low', 'medium', 'high', 'xhigh' or 'max'");
     });
     await expect(provider.refine({ request: refineRequest, options: { includeSamples: false } })).rejects.toMatchObject({
-      kind: "bad_output",
+      kind: "misconfigured",
       reason: "request",
     });
     expect(spy).toHaveBeenCalledTimes(1);
@@ -170,5 +170,140 @@ describe("AnthropicProvider coach turns", () => {
       options: { includeSamples: false },
     });
     expect(result.practice).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ screenshots
+
+const analysis: Analysis = {
+  canReply: true,
+  transcript: [
+    { speaker: "them", text: "are we still on for friday?" },
+    { speaker: "me", text: "unless you found someone better" },
+  ],
+  latestMessage: "are we still on for friday?",
+  latestFromMe: false,
+  read: "They're checking the plan is still on, with a bit of teasing.",
+  toneLabel: "Playful planning",
+  observations: ["They asked a direct question about Friday."],
+  assumptions: ["They might be a little nervous about it."],
+  opportunity: "Confirm, and tease back.",
+  suggestedIntents: ["natural", "laugh"],
+  headsUp: null,
+  problem: "none",
+};
+
+const shot = (mediaType: "image/png" | "image/jpeg", marker: string) => ({
+  mediaType,
+  base64: Buffer.from(marker).toString("base64"),
+  width: 800,
+  height: 1200,
+});
+
+describe("AnthropicProvider screenshots", () => {
+  type Block = { type: string; source?: { type: string; media_type: string; data: string }; text?: string };
+
+  it("sends each screenshot as an image block, in order, before the text that refers to them", async () => {
+    const { provider, spy } = setup(async () => answer(analysis));
+    const images = [shot("image/jpeg", "first"), shot("image/png", "second")];
+    const result = await provider.analyze({ request: analyzeRequestSchema.parse({ conversation: "" }), images });
+    expect(result.transcript).toHaveLength(2);
+
+    const [message] = spy.mock.calls[0][0].messages;
+    expect(message.role).toBe("user");
+    const blocks = message.content as Block[];
+    expect(blocks.map((block) => block.type)).toEqual(["image", "image", "text"]);
+    expect(blocks[0].source).toEqual({ type: "base64", media_type: "image/jpeg", data: images[0].base64 });
+    expect(blocks[1].source).toEqual({ type: "base64", media_type: "image/png", data: images[1].base64 });
+    expect(blocks[2].text).toContain("I attached 2 screenshots of the conversation, in order.");
+  });
+
+  it("sends screenshots with a one-step reply request too", async () => {
+    const replies = { note: "ok", replies: [{ style: "Natural", text: "yes!", why: "Easy." }], headsUp: null };
+    const { provider, spy } = setup(async () => answer(replies));
+    await provider.replies({
+      request: (await import("@/lib/domain/contracts")).repliesRequestSchema.parse({}),
+      images: [shot("image/jpeg", "only")],
+      options: { includeSamples: false },
+    });
+    const blocks = spy.mock.calls[0][0].messages[0].content as Block[];
+    expect(blocks.map((block) => block.type)).toEqual(["image", "text"]);
+  });
+
+  it("tells the user when the API cannot use an image, without marking the service as down", async () => {
+    const { provider } = setup(async () => {
+      throw apiError(400, "messages.0.content.0.image.source.base64.data: Could not process image");
+    });
+    const error = await provider
+      .analyze({ request: analyzeRequestSchema.parse({}), images: [shot("image/jpeg", "x")] })
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ kind: "rejected_input", reason: "image" });
+    expect((error as Error).message).toMatch(/couldn't read one of those screenshots/i);
+    expect(aiHealth().state).toBe("untested");
+  });
+
+  it("treats an answer that does not match the schema as unusable output", async () => {
+    const { provider } = setup(async () => {
+      // What the SDK throws when the model's JSON fails the Zod schema.
+      throw new Anthropic.AnthropicError("Failed to parse structured output: canReply: Required");
+    });
+    await expect(
+      provider.analyze({ request: analyzeRequestSchema.parse({}), images: [shot("image/jpeg", "x")] }),
+    ).rejects.toMatchObject({ kind: "bad_output", reason: "output" });
+  });
+
+  it("treats a missing parsed answer and a cut-off answer as unusable output", async () => {
+    for (const reply of [answer(null), answer(analysis, "max_tokens")]) {
+      const { provider } = setup(async () => reply);
+      await expect(
+        provider.analyze({ request: analyzeRequestSchema.parse({}), images: [shot("image/png", "x")] }),
+      ).rejects.toMatchObject({ kind: "bad_output" });
+    }
+  });
+});
+
+describe("normalizeAnalysis", () => {
+  it("drops empty lines and tidies whitespace without adding anything", () => {
+    const result = normalizeAnalysis({
+      ...analysis,
+      transcript: [
+        { speaker: "them", text: "  are we still on?  " },
+        { speaker: "unknown", text: "   " },
+        { speaker: "me", text: "" },
+      ],
+      latestMessage: "   ",
+      toneLabel: "  Playful \n planning ",
+      observations: ["  one  ", "", "two"],
+      assumptions: [" "],
+      headsUp: "  ",
+      suggestedIntents: ["laugh", "laugh", "natural", "flirt", "interest"],
+    });
+    expect(result.transcript).toEqual([{ speaker: "them", text: "are we still on?" }]);
+    expect(result.latestMessage).toBeNull();
+    expect(result.toneLabel).toBe("Playful planning");
+    expect(result.observations).toEqual(["one", "two"]);
+    expect(result.assumptions).toEqual([]);
+    expect(result.headsUp).toBeNull();
+    expect(result.suggestedIntents).toEqual(["laugh", "natural", "flirt"]);
+  });
+
+  it("never offers replies to a screenshot that could not be read", () => {
+    for (const problem of ["unreadable", "not_a_conversation"] as const) {
+      const result = normalizeAnalysis({ ...analysis, canReply: true, problem });
+      expect(result.canReply).toBe(false);
+      expect(result.problem).toBe(problem);
+    }
+    expect(normalizeAnalysis({ ...analysis, problem: "partly_readable" }).canReply).toBe(true);
+  });
+
+  it("refuses an analysis with nothing to tell the user", () => {
+    expect(() => normalizeAnalysis({ ...analysis, read: "   " })).toThrow(ProviderError);
+  });
+
+  it("caps the transcript at the most recent lines the contract allows", () => {
+    const long = Array.from({ length: 120 }, (_, i) => ({ speaker: "them" as const, text: `line ${i}` }));
+    const result = normalizeAnalysis({ ...analysis, transcript: long });
+    expect(result.transcript).toHaveLength(80);
+    expect(result.transcript.at(-1)?.text).toBe("line 119");
   });
 });

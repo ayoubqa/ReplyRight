@@ -103,6 +103,8 @@ public enum ServerFailure {
             return "The AI provider is limiting requests. Try again shortly."
         case "not_configured":
             return "The server has no AI key, so it only returns samples."
+        case "image":
+            return "The AI provider could not use one of the screenshots. The server checks every image first, so this points at an unusual file."
         default:
             return "The server log has more detail."
         }

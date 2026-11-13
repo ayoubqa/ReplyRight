@@ -41,6 +41,8 @@ The app, the keyboard and the share sheet are three processes. They share code t
 
 **Profiles are the user's words, shared by consent.** A `CrushProfile` holds only what the user typed. Each kind of information has a switch (`Sharing`), and `payload` builds what is sent from those switches, only for a request where the user picked that person. The photo, saved replies and conversations are never part of it. Practice with the coach never sends a profile.
 
+**Every screenshot is decoded on the server before the AI sees it.** `backend/src/lib/server/images.ts` sniffs the real type from the first bytes, then decodes every pixel with sharp (libvips) in strict mode, so a file that only looks like an image is refused with a message the user can act on. Images under 200 px on the long edge are refused as unreadable, and anything over 64 megapixels as too large. A clean image within limits is sent unchanged, so the app's JPEG is not compressed twice. Otherwise it is rotated upright, scaled to at most 2576 px on the long edge (the native resolution of the models in use), stripped of metadata, and re-encoded (PNG kept lossless where it fits, else high-quality JPEG) until it is under 5 MB base64. The provider receives image blocks in the order attached, before the text that refers to them.
+
 **Swift 5 language mode.** Chosen deliberately: the code was written without a compiler, and strict concurrency checking would have multiplied the number of first-build errors. Types that touch UI are `@MainActor`.
 
 **The Xcode project is generated.** `ios/scripts/generate_xcodeproj.py` writes it from the files on disk with deterministic object ids. `ios/project.yml` describes the same thing for XcodeGen.
@@ -54,7 +56,7 @@ Headers sent by the app: `X-RR-Install` (anonymous install id, for daily limits)
 | Endpoint | Purpose | Counts against |
 | --- | --- | --- |
 | `GET /status` | Mode (live or demo), whether live AI has been answering, model names, the deployment environment, plans, the caller's usage | nothing |
-| `POST /analyze` | Transcript, a hedged read, observations kept apart from assumptions, suggested intents | nothing (rate limited) |
+| `POST /analyze` | Transcript, a hedged read, observations kept apart from assumptions, suggested intents, and `problem`: whether the material could be read (`none`, `partly_readable`, `unreadable`, `not_a_conversation`) | nothing (rate limited) |
 | `POST /replies` | Three distinct options for a reply (`kind: "reply"`) or an opener (`kind: "starter"`) | daily generations |
 | `POST /refine` | Rewrite one message: more natural, more playful, more confident, more romantic, less intense, shorter, more direct, ask a question, keep it going, more like me, or in a tone. `count` is 1 or 3 | daily generations |
 | `POST /coach` | One turn of the coach, in one of three modes: `ask` (a question, optionally on a topic), `review` (feedback on one message: intent, how it reads, five checks, improvements, an alternative, why it works, a lesson) or `practice` (the coach plays an invented other person and gives feedback). The client sends the exchange so far; the server keeps no history | daily coach messages |
@@ -66,7 +68,7 @@ Every success has the same envelope:
 { "mode": "live", "provider": "anthropic", "model": "…", "usage": { "tier": "free", "generations": { "used": 1, "limit": 10, "remaining": 9 }, "coach": { … }, "resetsAt": "…" }, "result": { … } }
 ```
 
-Every failure is `{ "error": { "code", "message", "usage"?, "reason"? } }`. `reason` is a coarse cause for an AI failure (`credentials`, `billing`, `model`, `request`, `overloaded`, `timeout`, `network`, `rate_limit`, `refusal`, `output`), shown in the app's Connection screen and never containing request content. Codes: `invalid_request`, `unsupported_media`, `payload_too_large` (400/413), `limit_reached` and `upgrade_required` (402), `ai_declined` (422), `rate_limited` (429), `ai_bad_output` (502), `ai_unavailable` (503), `internal` (500). The Swift client maps each to a typed `APIError` with a message written for the user.
+Every failure is `{ "error": { "code", "message", "usage"?, "reason"? } }`. `reason` is a coarse cause for an AI failure (`credentials`, `billing`, `model`, `request`, `overloaded`, `timeout`, `network`, `rate_limit`, `refusal`, `output`, `image`), shown in the app's Connection screen and never containing request content. Codes: `invalid_request`, `unsupported_media`, `payload_too_large` (400/413), `limit_reached` and `upgrade_required` (402), `ai_declined` (422), `rate_limited` (429), `ai_bad_output` (502), `ai_unavailable` (503), `internal` (500). The Swift client maps each to a typed `APIError` with a message written for the user.
 
 The schemas are in `backend/src/lib/domain/contracts.ts` and mirrored in `ios/Packages/ReplyRightKit/Sources/ReplyRightCore/Models/API.swift`. Change both together; the Swift tests assert the wire names.
 

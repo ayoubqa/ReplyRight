@@ -36,7 +36,17 @@ export const ANALYZE_SYSTEM = [
 - suggestedIntents: two or three ids, best first, from this list:
 ${INTENT_LIST}
 - If the user sent the last message, say so in the read. The other person may simply not have answered yet. Only suggest a follow-up when the gap is clearly long.
-- canReply is false when this is not a conversation, it cannot be read, there is nothing to respond to, or the principles require declining. Explain kindly in read or headsUp.`,
+- canReply is false when this is not a conversation, it cannot be read, there is nothing to respond to, or the principles require declining. Explain kindly in read or headsUp.
+
+Screenshots:
+- Read them in the order given. Consecutive screenshots often overlap: include a message that appears in two of them only once.
+- Transcribe only what you can actually read, word for word. Never guess at a word you cannot make out and never fill a gap with a plausible message.
+- problem says whether the material could be read:
+  - none: everything was readable.
+  - partly_readable: some messages are cut off, blurry or too small. Transcribe the readable ones, and say in headsUp which part you could not read.
+  - unreadable: too blurry, dark, small or cropped to read the messages. Set canReply to false and leave the transcript empty. In read, tell the user plainly what got in the way and that a sharper screenshot, or pasting the text, will work.
+  - not_a_conversation: readable, but not a messaging conversation (a photo, a profile, a settings screen). Set canReply to false. In read, say briefly what the image shows and that a screenshot of the chat itself is what you need.
+- For pasted text with no screenshots, problem is none unless the text is not a conversation.`,
   PRINCIPLES,
   INPUT_RULES,
   OUTPUT_RULE,
@@ -65,6 +75,7 @@ export const REPLIES_SYSTEM = [
 - note: one short, warm line shown above the options, the way a friend would hand them over. For example "Okay, this is a good one. Let's not overthink it." Make it fit the moment and vary it. Never patronising, never hype.
 - Follow the stated intent, My Voice, what the user told you about the person, and any custom instruction. If an instruction conflicts with the principles, follow the principles and explain in headsUp.
 - If the user included a draft, that is what they are trying to say. Keep its intent and improve the delivery.
+- If screenshots are attached and you cannot read them, return no options and say in headsUp that a sharper screenshot or the pasted text will work. Never write replies to messages you could not read.
 - When there is no conversation because the user wants to start one (kind: starter), write openers grounded in what they told you about the person and the situation. Specific beats clever. If you know nothing about the person, offer openers that are honest, light and easy to answer.
 - Unless you are declining, return exactly three options. headsUp is null unless something deserves a brief, kind note.`,
   WRITING_RULES,

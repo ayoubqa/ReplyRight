@@ -28,7 +28,7 @@ The backend is built, run and tested where this was written. **The iOS code is w
 
 | Part | State |
 | --- | --- |
-| Backend API | Type-checked, linted, production build passes, 77 automated tests pass, every request shape the app sends exercised over HTTP in demo mode (`npm run verify`) |
+| Backend API | Type-checked, linted, production build passes, 109 automated tests pass, every request shape the app sends exercised over HTTP in demo mode (`npm run verify`, 21 checks including real screenshot fixtures) |
 | Live AI output | **Not exercised.** No Anthropic API key was available. `docs/VERIFICATION.md` step 3 is the check to run |
 | Model comparison eval | Harness written, graders unit-tested, dry-run only. **Not run against live models** |
 | Swift sources (59 files, about 18,200 lines) | Parse cleanly; types, members and argument labels resolve in a text-level check. **This revision has not been compiled** |
@@ -81,7 +81,7 @@ npm run verify           # every request shape the app sends; works in demo mode
 npm run verify:live      # the same, plus one real AI call; fails unless AI is live
 ```
 
-Other commands: `npm test` (77 tests), `npm run typecheck`, `npm run lint`, `npm run build`.
+Other commands: `npm test` (109 tests), `npm run typecheck`, `npm run lint`, `npm run build`.
 
 While it runs, the server prints one line per request (task, status, timing, a request id). It never prints a conversation, a draft, a screenshot or a key.
 
@@ -205,7 +205,7 @@ How entitlement works: the app derives Pro from transactions StoreKit has verifi
 ## 7. Run the tests
 
 ```bash
-# Backend: 77 tests, no network needed
+# Backend: 109 tests, no network needed
 cd backend && npm test
 
 # Everything the app sends, against a running server
