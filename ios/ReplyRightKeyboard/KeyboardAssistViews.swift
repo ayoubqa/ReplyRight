@@ -14,7 +14,8 @@ private func pillConfiguration(title: String?, symbol: String?, prominent: Bool)
         configuration.imagePadding = 5
     }
     configuration.cornerStyle = .capsule
-    configuration.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+    // About 34 points tall to look at. The touch area is 44 by 44 (`HitAreaButton`).
+    configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
     if prominent {
         configuration.baseBackgroundColor = KeyboardTheme.accent
         configuration.baseForegroundColor = KeyboardTheme.onAccent
@@ -32,7 +33,26 @@ private func pillConfiguration(title: String?, symbol: String?, prominent: Bool)
     return configuration
 }
 
+/// A button whose touch area is at least 44 by 44 points, centred on what is
+/// drawn, so a pill can look compact and still be easy to hit. The parent view
+/// must leave room around it: touches outside the parent never reach it.
+final class HitAreaButton: UIButton {
+    static let minimumSide: CGFloat = 44
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard !isHidden, isUserInteractionEnabled, alpha > 0.01 else { return false }
+        let dx = max(0, (HitAreaButton.minimumSide - bounds.width) / 2)
+        let dy = max(0, (HitAreaButton.minimumSide - bounds.height) / 2)
+        return bounds.insetBy(dx: -dx, dy: -dy).contains(point)
+    }
+}
+
 /// The bar above the keys. It is the only place AI features start from.
+///
+/// Every control has a touch area of at least 44 by 44 points: the bar is 46
+/// tall, pills are about 34 tall with their touch area extended vertically,
+/// icon-only and short buttons are at least 44 wide, and the mark sits in a
+/// 44 by 44 control.
 final class KeyboardToolbar: UIView {
     enum Mode: Equatable {
         /// Normal typing: Reply, Rewrite and Saved are available.
@@ -48,14 +68,18 @@ final class KeyboardToolbar: UIView {
     var onSaved: (() -> Void)?
     var onLanguage: (() -> Void)?
     var onBackToKeys: (() -> Void)?
+    /// The mark was tapped: show what the keyboard knows about its setup.
+    var onStatus: (() -> Void)?
 
     private let stack = UIStackView()
     private let brand = KeyboardBrandMark(side: 26)
-    private let replyButton = UIButton(type: .system)
-    private let rewriteButton = UIButton(type: .system)
-    private let savedButton = UIButton(type: .system)
-    private let languageButton = UIButton(type: .system)
-    private let backButton = UIButton(type: .system)
+    /// A larger touch area around the mark.
+    private let brandControl = UIControl()
+    private let replyButton = HitAreaButton(type: .system)
+    private let rewriteButton = HitAreaButton(type: .system)
+    private let savedButton = HitAreaButton(type: .system)
+    private let languageButton = HitAreaButton(type: .system)
+    private let backButton = HitAreaButton(type: .system)
     private let titleLabel = UILabel()
     private let spacer = UIView()
 
@@ -76,7 +100,7 @@ final class KeyboardToolbar: UIView {
 
         replyButton.configuration = pillConfiguration(title: "Reply", symbol: "quote.opening", prominent: true)
         replyButton.addTarget(self, action: #selector(tapReply), for: .touchUpInside)
-        replyButton.accessibilityHint = "Suggests replies to a conversation you shared"
+        replyButton.accessibilityHint = "Suggests replies to a message you copied or shared"
 
         rewriteButton.configuration = pillConfiguration(title: "Rewrite", symbol: "pencil", prominent: false)
         rewriteButton.addTarget(self, action: #selector(tapRewrite), for: .touchUpInside)
@@ -101,7 +125,26 @@ final class KeyboardToolbar: UIView {
 
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        for view in [brand, backButton, replyButton, rewriteButton, titleLabel, spacer, languageButton, savedButton] as [UIView] {
+        brand.translatesAutoresizingMaskIntoConstraints = false
+        brandControl.addSubview(brand)
+        brandControl.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            brandControl.widthAnchor.constraint(equalToConstant: HitAreaButton.minimumSide),
+            brandControl.heightAnchor.constraint(equalToConstant: HitAreaButton.minimumSide),
+            // Short buttons are drawn at least as wide as their touch area, so
+            // the touch area never has to reach past the edge of the bar.
+            savedButton.widthAnchor.constraint(greaterThanOrEqualToConstant: HitAreaButton.minimumSide),
+            languageButton.widthAnchor.constraint(greaterThanOrEqualToConstant: HitAreaButton.minimumSide),
+            brand.centerXAnchor.constraint(equalTo: brandControl.centerXAnchor),
+            brand.centerYAnchor.constraint(equalTo: brandControl.centerYAnchor),
+        ])
+        brandControl.addTarget(self, action: #selector(tapStatus), for: .touchUpInside)
+        brandControl.isAccessibilityElement = true
+        brandControl.accessibilityTraits = .button
+        brandControl.accessibilityLabel = "ReplyRight Keyboard"
+        brandControl.accessibilityHint = "Shows whether Full Access is on and lets you test setup"
+
+        for view in [brandControl, backButton, replyButton, rewriteButton, titleLabel, spacer, languageButton, savedButton] as [UIView] {
             stack.addArrangedSubview(view)
         }
         setMode(.typing)
@@ -123,7 +166,7 @@ final class KeyboardToolbar: UIView {
     func setMode(_ mode: Mode) {
         switch mode {
         case .typing:
-            brand.isHidden = false
+            brandControl.isHidden = false
             backButton.isHidden = true
             replyButton.isHidden = false
             rewriteButton.isHidden = false
@@ -131,7 +174,7 @@ final class KeyboardToolbar: UIView {
             languageButton.isHidden = false
             titleLabel.isHidden = true
         case .paused:
-            brand.isHidden = false
+            brandControl.isHidden = false
             backButton.isHidden = true
             replyButton.isHidden = true
             rewriteButton.isHidden = true
@@ -140,7 +183,7 @@ final class KeyboardToolbar: UIView {
             titleLabel.isHidden = false
             titleLabel.text = "ReplyRight is paused in this field"
         case .panel(let title):
-            brand.isHidden = true
+            brandControl.isHidden = true
             backButton.isHidden = false
             replyButton.isHidden = true
             rewriteButton.isHidden = true
@@ -156,6 +199,7 @@ final class KeyboardToolbar: UIView {
     @objc private func tapSaved() { onSaved?() }
     @objc private func tapLanguage() { onLanguage?() }
     @objc private func tapBack() { onBackToKeys?() }
+    @objc private func tapStatus() { onStatus?() }
 }
 
 /// A tappable suggestion: the approach it takes, and the message.
@@ -435,7 +479,7 @@ final class AssistPanelView: UIView {
         }
 
         for (index, chip) in chips.enumerated() {
-            let button = UIButton(type: .system)
+            let button = HitAreaButton(type: .system)
             var configuration = pillConfiguration(
                 title: chip.title,
                 symbol: chip.isLocked ? "lock.fill" : nil,
@@ -465,7 +509,8 @@ final class AssistPanelView: UIView {
             row.topAnchor.constraint(equalTo: scroller.contentLayoutGuide.topAnchor),
             row.bottomAnchor.constraint(equalTo: scroller.contentLayoutGuide.bottomAnchor),
             row.heightAnchor.constraint(equalTo: scroller.frameLayoutGuide.heightAnchor),
-            scroller.heightAnchor.constraint(equalToConstant: 36),
+            // Tall enough for each chip's 44-point touch area.
+            scroller.heightAnchor.constraint(equalToConstant: HitAreaButton.minimumSide),
         ])
         return scroller
     }
@@ -474,15 +519,18 @@ final class AssistPanelView: UIView {
         guard primaryTitle != nil || secondaryTitle != nil else { return }
         let row = UIStackView()
         row.axis = .horizontal
+        row.alignment = .center
         row.spacing = 8
+        // Tall enough for each button's 44-point touch area.
+        row.heightAnchor.constraint(greaterThanOrEqualToConstant: HitAreaButton.minimumSide).isActive = true
         if let primaryTitle {
-            let button = UIButton(type: .system)
+            let button = HitAreaButton(type: .system)
             button.configuration = pillConfiguration(title: primaryTitle, symbol: nil, prominent: true)
             button.addTarget(self, action: #selector(tapPrimary), for: .touchUpInside)
             row.addArrangedSubview(button)
         }
         if let secondaryTitle {
-            let button = UIButton(type: .system)
+            let button = HitAreaButton(type: .system)
             button.configuration = pillConfiguration(title: secondaryTitle, symbol: nil, prominent: false)
             button.addTarget(self, action: #selector(tapSecondary), for: .touchUpInside)
             row.addArrangedSubview(button)

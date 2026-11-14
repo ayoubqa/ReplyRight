@@ -92,7 +92,7 @@ The server terminal has one line per request: `[replyright] task=replies status=
 
 Run the **ReplyRight** scheme on an iPhone simulator.
 
-1. On Home, look at the pill in the top right corner.
+1. On Home, look at the pill in the top right corner (Debug builds only; in a release build, open Settings with the profile button, then Connection).
    - **Live AI**: all four links work.
    - **Demo mode**: the app reaches the server, and the server has no key (step 2).
    - **Can't reach ReplyRight**: the app cannot reach the server.
@@ -100,7 +100,7 @@ Run the **ReplyRight** scheme on an iPhone simulator.
    - choose Development, Staging or Production, or type an address (for example `http://localhost:3001` if the server moved ports);
    - tap **Run a live check**, which asks the server to make one small real AI call with a fixed sentence and reports whether it worked;
    - read the last requests the app made (address, status, timing, request id) and copy them as a report. The report contains no messages, screenshots or keys.
-3. Type a message on Home, tap **Read it**, then **Write my replies**. Under the heading it says **Written by live AI** or **Demo sample, not written for you**. The app never shows a demo sample without that label, and never makes up an answer when the server fails.
+3. Type a message on Home, tap **Help me reply**, then **Write my replies**. (**See an example** opens a worked example with replies written in advance. It makes no request, and the server's log should show none.) Under the heading it says **Written by live AI** or **Demo sample, not written for you**. The app never shows a demo sample without that label, and never makes up an answer when the server fails.
 4. Tap the pill again and check the request list shows `Analyze, HTTP 200` and `Replies, HTTP 200`, each marked Live AI.
 
 ### On a real iPhone
@@ -109,14 +109,27 @@ Run the **ReplyRight** scheme on an iPhone simulator.
 
 Running the script twice within a minute can trip the per-address rate limit (`RATE_LIMIT_PER_MINUTE`, 30 by default); it says so when that happens.
 
+### The keyboard
+
+Needs a simulator or an iPhone. Nothing here costs AI credits until you tap Write replies.
+
+1. Fresh install: the Keyboard tab says **Not set up**, and Home shows the keyboard card.
+2. Keyboard tab, **Set up the keyboard**. Step 1, **Open ReplyRight in Settings** opens the app's page in Settings; Keyboards is there. Switch on ReplyRight, come back, tap **I've switched it on**. The status becomes **Turned on, not tested yet**, not Ready.
+3. Step 3: tap the test box, switch to ReplyRight with the globe key, tap the mark at the left of the bar, then **Type a test message**.
+   - Full Access off: the status becomes **Typing only**, and Home says the keyboard is typing only.
+   - Full Access on: **Ready, last confirmed just now**, and Home shows one line, "Keyboard ready".
+4. Switch Full Access off in Settings and test again: the status goes back to **Typing only**.
+5. In another app, copy a message, switch to ReplyRight and tap Reply: the copied text is offered with **Not this**. Copy a code such as `482913` instead: it is not offered.
+6. Tap Saved without Full Access: the keyboard explains that it may not be able to read saved lines, rather than saying nothing is saved.
+
 ## 5. Check the failure states
 
 | Do this | Expect |
 | --- | --- |
-| Stop the server, then tap Read it | "Can't reach ReplyRight", a Try again button, and Connection details. The pill turns red |
+| Stop the server, then tap Help me reply | "Can't reach ReplyRight", a Try again button, and Connection details. The pill turns red |
 | Start the server again and tap Try again | The read appears |
 | Remove the key and restart the server | The pill says Demo mode and every result is labelled as a sample |
-| Put a wrong key in `.env.local`, restart, tap Read it | "That didn't go through". Connection says the AI isn't answering and names the key as the cause |
+| Put a wrong key in `.env.local`, restart, tap Help me reply | "That didn't go through". Connection says the AI isn't answering and names the key as the cause |
 | Turn on Airplane Mode | "You're offline" |
 | Use up the free allowance | The paywall opens. Nothing is charged for failed requests |
 | Share a blurred screenshot, or a photo that is not a chat | The read says it couldn't read it, or that it isn't a conversation, and offers another screenshot or pasting the text. No replies are written |
@@ -126,10 +139,10 @@ Running the script twice within a minute can trip the per-address rate limit (`R
 
 ```bash
 cd backend && npm test                              # 214 server tests, no network
-cd ios/Packages/ReplyRightKit && swift test         # 121 unit tests, on a Mac
+cd ios/Packages/ReplyRightKit && swift test         # 147 unit tests, on a Mac
 ```
 
-In Xcode, Product, Test also runs the 6 UI tests. The ones that ask for an answer need the server running; demo mode is enough.
+In Xcode, Product, Test also runs the 9 UI tests. The ones that ask for an answer need the server running; demo mode is enough.
 
 Checks that work without Xcode:
 
@@ -148,6 +161,7 @@ python3 ios/scripts/check_xcodeproj.py           # project file structure
 | Server: model routing (route choice, configuration, thinking per model, Haiku-to-Sonnet refusal fallback, spend limit across models) | Verified where this was written, with the real SDK against a fake HTTP API (`tests/routing.test.ts`). Step-by-step checks on a Mac: `docs/COST-CONTROLS.md` |
 | Model quality per route (Haiku, Sonnet, Opus) | **Not run yet.** The eval harness is ready (`npm run eval`); see `docs/COST-CONTROLS.md` |
 | Server: key isolation, usage ledger, development spend limit, retries, cancellation and duplicate joining | Verified where this was written, with the real SDK against a fake HTTP API (`tests/provider-calls.test.ts`, `tests/pipeline-calls.test.ts`, `tests/spend.test.ts`, `tests/credentials.test.ts`). Not yet run against the real API with a development key |
+| App: four-tab navigation, Home, Keyboard tab, setup journey, three-step onboarding, keyboard status from evidence, clipboard offer, activity counts | Written without Xcode. Core logic has unit tests (`KeyboardStatusTests`, `ProductActivityTests`, `CopiedText` cases in `KeyboardTests`); UI tests updated and added. Needs a build, `swift test` and the UI tests on a Mac, and the keyboard steps in section 4 on a device |
 | App: no automatic retry after `X-RR-Retry: no` | Written without Xcode; unit test added (`testNoAutomaticRetryWhenTheServerSaysARepeatCouldCostAnotherAICall`). Needs a build and `swift test` on a Mac |
 | Server: every request shape the app sends, over HTTP, in demo mode (`npm run verify`, 21 checks) | Verified where this was written |
 | Server: screenshot decoding, normalisation and refusal of damaged, unsupported, tiny and oversized images | Verified where this was written (unit and route tests, and `verify` against both `next dev` and a production build) |

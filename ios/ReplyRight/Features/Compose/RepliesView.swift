@@ -37,6 +37,7 @@ struct RepliesView: View {
                             ReplyCard(
                                 option: $option,
                                 isDemo: compose.mode == .demo,
+                                isLive: compose.mode == .live,
                                 isRefining: compose.refiningID == option.id,
                                 intent: compose.intent,
                                 crushID: compose.crush?.id,
@@ -211,6 +212,9 @@ struct ReplyCard: View {
     @Environment(AppModel.self) private var app
     @Binding var option: ReplyOption
     var isDemo = false
+    /// Written by live AI in this session (not a demo sample or a reopened saved session),
+    /// so copying it counts as using a suggestion.
+    var isLive = false
     var isRefining = false
     var intent: Intent? = nil
     var crushID: UUID? = nil
@@ -303,7 +307,7 @@ struct ReplyCard: View {
         HStack(spacing: RRSpace.s) {
             Button {
                 isEditing = false
-                app.copy(option.text, original: option.isEdited ? option.originalText : nil)
+                app.copy(option.text, original: option.isEdited ? option.originalText : nil, isLiveSuggestion: isLive)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }

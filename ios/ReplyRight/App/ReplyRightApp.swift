@@ -69,8 +69,12 @@ struct ReplyRightApp: App {
 }
 
 /// Decides between first-run onboarding and the main interface, and hosts
-/// everything that can appear over any screen: the paywall, the connection
-/// screen and toasts.
+/// everything that can appear over any screen: settings, keyboard setup, the
+/// paywall, the connection screen and toasts.
+///
+/// SwiftUI presents one sheet at a time from a view. Settings opens the paywall
+/// from inside itself, so while Settings is up the paywall is attached there
+/// instead of here.
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
@@ -91,9 +95,27 @@ struct RootView: View {
         .tint(Color.rrAccent)
         .preferredColorScheme(app.colorScheme)
         .rrToast($app.toast)
-        .sheet(item: $app.paywall) { reason in
+        .sheet(item: app.showsSettings ? Binding<PaywallReason?>.constant(nil) : $app.paywall) { reason in
             PaywallView(reason: reason)
                 .environment(app)
+                .preferredColorScheme(app.colorScheme)
+        }
+        .sheet(isPresented: $app.showsSettings) {
+            SettingsSheet()
+                .environment(app)
+                .tint(Color.rrAccent)
+                .preferredColorScheme(app.colorScheme)
+                .rrToast($app.toast)
+                .sheet(item: $app.paywall) { reason in
+                    PaywallView(reason: reason)
+                        .environment(app)
+                        .preferredColorScheme(app.colorScheme)
+                }
+        }
+        .sheet(isPresented: $app.showsKeyboardSetup) {
+            KeyboardSetupJourney()
+                .environment(app)
+                .tint(Color.rrAccent)
                 .preferredColorScheme(app.colorScheme)
         }
         .sheet(isPresented: $app.showsConnection) {
@@ -121,6 +143,8 @@ struct MainTabs: View {
     var body: some View {
         @Bindable var app = app
 
+        // Four tabs: Reply, Coach, Keyboard and People. Settings opens from the
+        // profile button at the top of each tab.
         TabView(selection: $app.selectedTab) {
             HomeTab()
                 .tabItem { Label("Reply", systemImage: "quote.opening") }
@@ -130,13 +154,14 @@ struct MainTabs: View {
                 .tabItem { Label("Coach", systemImage: "graduationcap") }
                 .tag(AppModel.Tab.coach)
 
-            LibraryTab()
-                .tabItem { Label("Notebook", systemImage: "book.closed") }
-                .tag(AppModel.Tab.library)
+            KeyboardTab()
+                .tabItem { Label("Keyboard", systemImage: "keyboard") }
+                .tag(AppModel.Tab.keyboard)
+                .badge(app.keyboardStatus == .notSetUp || app.keyboardStatus.isReady ? 0 : 1)
 
-            YouTab()
-                .tabItem { Label("You", systemImage: "person.crop.circle") }
-                .tag(AppModel.Tab.you)
+            PeopleTab()
+                .tabItem { Label("People", systemImage: "person.2") }
+                .tag(AppModel.Tab.people)
         }
     }
 }

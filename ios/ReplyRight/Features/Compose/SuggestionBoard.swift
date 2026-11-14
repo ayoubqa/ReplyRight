@@ -42,6 +42,9 @@ final class SuggestionBoard {
                 let envelope = try await app.api.replies(request)
                 guard let self, !Task.isCancelled else { return }
                 app.record(envelope.usage, mode: envelope.mode)
+                if !envelope.result.replies.isEmpty {
+                    app.noteSuggestionsShown(mode: envelope.mode)
+                }
                 self.finish(
                     suggestions: envelope.result.replies,
                     note: envelope.result.note,
@@ -72,6 +75,9 @@ final class SuggestionBoard {
                 let envelope = try await app.api.refine(request)
                 guard let self, !Task.isCancelled else { return }
                 app.record(envelope.usage, mode: envelope.mode)
+                if !envelope.result.options.isEmpty {
+                    app.noteSuggestionsShown(mode: envelope.mode)
+                }
                 self.finish(
                     suggestions: envelope.result.options,
                     note: envelope.result.note ?? "",
@@ -183,6 +189,7 @@ struct SuggestionBoardView: View {
                         ReplyCard(
                             option: $option,
                             isDemo: board.mode == .demo,
+                            isLive: board.mode == .live,
                             isRefining: board.refiningID == option.id,
                             intent: intent,
                             crushID: crush?.id,

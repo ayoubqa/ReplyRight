@@ -89,6 +89,9 @@ final class ComposeModel {
         intent = .natural
         intentWasChosen = false
         instruction = ""
+        // Where the last answer came from belongs to that answer. A new flow, or a
+        // reopened saved session, has no provenance until the server answers.
+        mode = nil
         resetReplies()
     }
 
@@ -240,6 +243,7 @@ final class ComposeModel {
                 self.repliesState = .loaded
                 if !self.options.isEmpty {
                     Haptics.success()
+                    app.noteSuggestionsShown(mode: envelope.mode)
                 }
             } catch let error as APIError {
                 guard let self, !Task.isCancelled, error != .cancelled else { return }

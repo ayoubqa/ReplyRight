@@ -169,11 +169,18 @@ final class ShareModel {
         isDemo = envelope.mode == .demo
         copiedID = nil
         phase = .replies
+        // On-device counts only, and only for live AI. See ProductActivity.
+        if envelope.mode == .live, !options.isEmpty {
+            store.recordActivity(.suggestionsShown(.share))
+        }
     }
 
     func copy(_ option: ReplyOption) {
         UIPasteboard.general.string = option.text
         Haptics.success()
+        if !isDemo {
+            store.recordActivity(.suggestionUsed(.share))
+        }
         copiedID = option.id
         copyCount += 1
         toast = Microcopy.pick(Microcopy.copied, seed: copyCount)

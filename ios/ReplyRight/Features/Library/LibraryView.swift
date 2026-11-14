@@ -2,7 +2,8 @@ import ReplyRightCore
 import ReplyRightUI
 import SwiftUI
 
-struct LibraryTab: View {
+/// The People tab: who the user is talking to, saved lines and saved conversations.
+struct PeopleTab: View {
     var body: some View {
         NavigationStack {
             NotebookView()
@@ -10,8 +11,8 @@ struct LibraryTab: View {
     }
 }
 
-/// The notebook: the people the user is talking to, the lines worth keeping
-/// and the conversations they chose to save.
+/// The people the user is talking to, the lines worth keeping and the
+/// conversations they chose to save.
 ///
 /// Nothing lands here automatically, and nothing here leaves the iPhone
 /// unless the user picks it as context for a reply.
@@ -21,14 +22,18 @@ struct NotebookView: View {
 
     var body: some View {
         ScreenScroll(spacing: RRSpace.l) {
+            HStack {
+                Spacer()
+                ProfileButton()
+            }
+
             VStack(alignment: .leading, spacing: RRSpace.xs) {
-                EditorialTitle("Your notebook", style: .display)
+                EditorialTitle("People", style: .display)
                 Text("Who you're talking to, lines worth keeping, and conversations you saved. It all stays on this iPhone.")
                     .rrText(.body)
                     .foregroundStyle(Color.rrTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, RRSpace.l)
 
             people
 
@@ -37,10 +42,10 @@ struct NotebookView: View {
                     SavedRepliesView()
                 } label: {
                     MenuRow(
-                        "Lines worth keeping",
+                        "Saved lines",
                         detail: app.savedReplies.isEmpty
                             ? "Bookmark a reply and it waits for you here, and in your keyboard."
-                            : "Saved replies, ready in your keyboard too.",
+                            : (app.keyboardStatus.isReady ? "Ready in your keyboard too." : "Copy one, or use it from your keyboard."),
                         trailing: app.savedReplies.isEmpty ? nil : "\(app.savedReplies.count)"
                     )
                 }
@@ -74,7 +79,7 @@ struct NotebookView: View {
     private var people: some View {
         VStack(alignment: .leading, spacing: RRSpace.s) {
             HStack(alignment: .firstTextBaseline) {
-                Eyebrow("People")
+                Eyebrow("Who you're talking to")
                 Button("Add someone") {
                     isAdding = true
                 }
@@ -175,7 +180,7 @@ struct SavedRepliesView: View {
                 }
             }
         }
-        .navigationTitle("Lines worth keeping")
+        .navigationTitle("Saved lines")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

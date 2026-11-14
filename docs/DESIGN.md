@@ -29,7 +29,7 @@ Tokens live in `ReplyRightCore/Design/Palette.swift` as plain numbers, so SwiftU
 | `line` / `lineStrong` | Bone at 11% / 24% | Ink at 11% / 24% | Hairlines, outlines |
 | `textPrimary` | Bone `#F4EEE6` | Ink `#12322A` | Text |
 | `textSecondary` | `#A9BDB3` | `#4F6B62` | Supporting text |
-| `textTertiary` | `#7C958A` | `#758C83` | Captions |
+| `textTertiary` | `#8AA398` | `#5A6E66` | Captions and hints |
 | Voice (`accent`) | Blush `#FFA79D` | Raspberry `#C2335A` | Approach names, links, selection |
 | Pencil (`highlight`) | Highlighter `#F3DC5F` | `#F6DE6A` | Marks behind or beside text |
 | `highlightInk` | `#F3DC5F` | `#7A5800` | The pencil as text: "demo sample", "worth a look" |
@@ -41,7 +41,7 @@ Tokens live in `ReplyRightCore/Design/Palette.swift` as plain numbers, so SwiftU
 | `warning` | `#F2B866` | `#9A5F0B` | Limits, form hints |
 | `danger` | `#FF7166` | `#B3261E` | Failures, permanent deletion |
 
-Contrast: Bone on Bottle is about 15:1, secondary text about 8:1, Bottle on Blush about 9:1, Ink on Paper about 12:1, Raspberry on Paper about 5.6:1. All body text clears WCAG AA.
+Contrast: Bone on Bottle is about 15:1, secondary text about 8:1, Bottle on Blush about 9:1, Ink on Paper about 12:1, Raspberry on Paper about 4.8:1. Tertiary text is at least 4.5:1 on the ground, `surface` and `surfaceRaised` in both appearances (light: 4.9, 5.2 and 4.5; dark: 6.1, 5.5 and 4.8). Before this it was 3.2:1 on Paper, which failed WCAG AA. All body text now clears AA.
 
 ## Type
 
@@ -63,6 +63,14 @@ Headlines are set evenly. No word is picked out in another colour or style.
 - Sections are separated by a `Rule()` (1 pt hairline) and vertical space, never by a box. `rrCard()` is kept as a name and now draws a ruled section.
 - `rrPanel()` is the one filled rectangle: the place you write on Home, and sheets.
 - Bars use the ground colour. Navigation titles are set in Young Serif.
+
+## Navigation
+
+Four tabs: **Reply** (Home), **Coach**, **Keyboard**, **People**. Settings is not a tab: the profile button at the top of each tab opens it as a sheet (My Voice, plan, Privacy Center, Connection, appearance, haptics, help). Saved lines are one tap from Home ("Pick up where you left off", or the menu for new users), from the People tab and from the Keyboard tab.
+
+Home, first time: the composer (Paste, Screenshot, See an example, **Help me reply**), then the keyboard card. The example opens a worked example with replies written in advance and labelled as such; it makes no request. Returning: the same, plus the last saved conversation and saved lines. The connection pill on Home is shown in Debug builds only; release builds show problems where they matter, in `ConnectionNotice`.
+
+Onboarding is three screens: Welcome (with the 18+ confirmation and the terms), Communication style (length and emoji with a live preview, tone, languages), First result: the worked example (no request, labelled as written in advance), a pasted chat (exactly one replies request, made when the user taps), or Skip.
 
 ## Components (`ReplyRightUI`)
 
@@ -100,7 +108,7 @@ Headlines are set evenly. No word is picked out in another colour or style.
 
 ## The keyboard
 
-UIKit, same palette (`KeyboardTheme`). The toolbar shows the mark, Reply (filled), Rewrite and Saved (outlines) and the language switch. Panels use the system face so they sit naturally beside the keys. The mark is drawn with Core Animation in `KeyboardBrand.swift` from the same numbers as the app.
+UIKit, same palette (`KeyboardTheme`). The toolbar shows the mark, Reply (filled), Rewrite and Saved (outlines) and the language switch. Buttons are drawn about 34 pt tall in a 46 pt bar; every bar and panel control has a touch area of at least 44 × 44 pt (`HitAreaButton` extends it vertically, short buttons are at least 44 wide, the mark sits in a 44 × 44 control). The letter keys follow the system keyboard's grid instead: about 54 pt tall with touch areas that meet their neighbours, narrower than 44 pt on most iPhones. The mark is a button: it opens a status panel that says whether Full Access is on and can type the test sentence for the app (`docs/KEYBOARD.md`). Panels use the system face so they sit naturally beside the keys. The mark is drawn with Core Animation in `KeyboardBrand.swift` from the same numbers as the app.
 
 ## Accessibility
 
@@ -109,4 +117,6 @@ UIKit, same palette (`KeyboardTheme`). The toolbar shows the mark, Reply (filled
 - VoiceOver labels on every control; decorative marks are hidden.
 - Colour is never the only signal: live and demo are written out, review verdicts are words.
 - Reduce Motion stops the blink and the fades.
-- Light ("Daylight") and dark ("Evening") are both first-class; You, Appearance chooses, or follows the iPhone.
+- Light ("Daylight") and dark ("Evening") are both first-class. New installs follow the iPhone ("Match iPhone"); installs from before keep Evening. Settings, Appearance changes it.
+- Status is never colour alone: the keyboard status has a symbol and words, and VoiceOver reads "Keyboard status: …".
+- The keyboard test announces its result to VoiceOver.

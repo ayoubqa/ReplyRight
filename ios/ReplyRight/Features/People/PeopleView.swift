@@ -4,47 +4,6 @@ import ReplyRightUI
 import SwiftUI
 import UIKit
 
-/// The people in the notebook, reached from the You tab.
-struct PeopleView: View {
-    @Environment(AppModel.self) private var app
-    @State private var isAdding = false
-
-    var body: some View {
-        ScreenScroll {
-            ScreenHeader(
-                lead: "The people on your mind",
-                emphasis: "",
-                subtitle: "A little context makes replies more specific. Write only what you know and are comfortable keeping. You decide what ReplyRight may use."
-            )
-
-            if app.people.isEmpty {
-                EmptyNote(
-                    "No one here yet",
-                    message: "Add someone and keep what matters in one place: where you met, what they're into, the running jokes."
-                )
-            } else {
-                PeopleList()
-            }
-
-            Button {
-                isAdding = true
-            } label: {
-                Label("Add someone", systemImage: "plus")
-            }
-            .buttonStyle(.rrSecondaryWide)
-        }
-        .navigationTitle("People")
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $isAdding) {
-            PersonEditor(person: nil) { created in
-                app.savePerson(created)
-            }
-            .environment(app)
-            .preferredColorScheme(app.colorScheme)
-        }
-    }
-}
-
 // MARK: - One person
 
 /// A file handed to the system share sheet.
@@ -79,7 +38,7 @@ struct PersonDetailView: View {
                 sharing(person)
                 dataControls(person)
             } else {
-                Text("This person is no longer in your notebook.")
+                Text("This person is no longer in People.")
                     .rrText(.callout)
                     .foregroundStyle(Color.rrTextSecondary)
             }
@@ -306,7 +265,7 @@ struct PersonDetailView: View {
             RRField("Add a line about how it's going", text: $newSummary, lineLimit: 3)
                 .accessibilityIdentifier("person-summary")
             if !newSummary.trimmed.isEmpty {
-                Button("Add to the notebook") {
+                Button("Add this note") {
                     addSummary()
                 }
                 .buttonStyle(.rrSecondaryCompact)

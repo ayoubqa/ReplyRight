@@ -20,6 +20,9 @@ public final class SharedStore: @unchecked Sendable {
         static let styles = "styles.json"
         static let settings = "settings.json"
         static let keyboardContext = "keyboard-context.json"
+        static let keyboardCheckIn = "keyboard-checkin.json"
+        static let keyboardSetup = "keyboard-setup.json"
+        static let activity = "activity.json"
         static let inbox = "inbox.json"
         static let inboxFolder = "inbox"
         static let entitlement = "entitlement.json"
@@ -173,6 +176,47 @@ public final class SharedStore: @unchecked Sendable {
 
     public func clearKeyboardContext() {
         files.delete(name: File.keyboardContext)
+    }
+
+    // MARK: Keyboard status
+
+    /// The keyboard's most recent check-in. Only a keyboard with Full Access
+    /// can write it, so its absence says nothing about whether the keyboard is on.
+    public func loadKeyboardCheckIn() -> KeyboardCheckIn? {
+        files.read(KeyboardCheckIn.self, name: File.keyboardCheckIn)
+    }
+
+    @discardableResult
+    public func saveKeyboardCheckIn(_ checkIn: KeyboardCheckIn) -> Bool {
+        files.write(checkIn, name: File.keyboardCheckIn)
+    }
+
+    /// What the app remembers about keyboard setup (confirmations and tests).
+    public func loadKeyboardSetup() -> KeyboardSetupRecord {
+        files.read(KeyboardSetupRecord.self, name: File.keyboardSetup) ?? KeyboardSetupRecord()
+    }
+
+    @discardableResult
+    public func saveKeyboardSetup(_ record: KeyboardSetupRecord) -> Bool {
+        files.write(record, name: File.keyboardSetup)
+    }
+
+    // MARK: Activity counts
+
+    /// Daily counts of suggestions shown and used. Numbers only, never text.
+    public func loadActivity() -> ProductActivity {
+        files.read(ProductActivity.self, name: File.activity) ?? ProductActivity()
+    }
+
+    /// Adds one event to today's counts. The app and the keyboard both call
+    /// this; each reads the file fresh, so the window for a lost count is one
+    /// write.
+    @discardableResult
+    public func recordActivity(_ event: ProductActivity.Event, at date: Date = Date()) -> ProductActivity {
+        var activity = loadActivity()
+        activity.record(event, at: date)
+        files.write(activity, name: File.activity)
+        return activity
     }
 
     // MARK: Share inbox

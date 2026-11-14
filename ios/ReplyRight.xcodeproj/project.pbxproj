@@ -72,10 +72,6 @@
 			isa = PBXBuildFile;
 			productRef = 4333A3B70EE2CDDF00E2A351;
 		};
-		3419C9FED3E7C0EF8BACB22D = {
-			isa = PBXBuildFile;
-			fileRef = F1983FBDEC60992AC505B0C4;
-		};
 		3964758FABF4916A4105989D = {
 			isa = PBXBuildFile;
 			fileRef = F1942A3C6D71EBD4B2D209A1;
@@ -116,6 +112,10 @@
 		5F70556BE0BDD6B733C39EC7 = {
 			isa = PBXBuildFile;
 			fileRef = 99E2B310669EFFB726284197;
+		};
+		5F79E549CEB484964CF527BF = {
+			isa = PBXBuildFile;
+			fileRef = EC3EE85789466B1C45145BEF;
 		};
 		656BE6AF11BE3C32E8ECE0E3 = {
 			isa = PBXBuildFile;
@@ -168,6 +168,10 @@
 		E99D90C4FD0350F6A220BE3A = {
 			isa = PBXBuildFile;
 			fileRef = 38D3F360AE19F21FE52019C0;
+		};
+		F1D33C4AB8D796FA6E0FA03E = {
+			isa = PBXBuildFile;
+			fileRef = BC4D9136A2AA6C2086FB9FDB;
 		};
 		F39B3E94C62B1C9B3E4BA544 = {
 			isa = PBXBuildFile;
@@ -437,6 +441,12 @@
 			path = Assets.xcassets;
 			sourceTree = "<group>";
 		};
+		BC4D9136A2AA6C2086FB9FDB = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = KeyboardHubView.swift;
+			sourceTree = "<group>";
+		};
 		BCAAEB798E495C2D380C4BA3 = {
 			isa = PBXFileReference;
 			lastKnownFileType = text.xcconfig;
@@ -492,6 +502,12 @@
 			path = ReplyRight.app;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
+		EC3EE85789466B1C45145BEF = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ExampleRepliesView.swift;
+			sourceTree = "<group>";
+		};
 		F0CD9130DEDDFF44EF904753 = {
 			isa = PBXFileReference;
 			lastKnownFileType = text.xcconfig;
@@ -502,12 +518,6 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = StartersView.swift;
-			sourceTree = "<group>";
-		};
-		F1983FBDEC60992AC505B0C4 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = KeyboardSetupView.swift;
 			sourceTree = "<group>";
 		};
 		F6ED9D068FA9AF7A266E1493 = {
@@ -586,6 +596,7 @@
 				70144F6418766A7D75952250,
 				299BB90451A81B0E92A3D99C,
 				A24205ED65AF3A1FAAC74EE2,
+				9A0041FDA9BFCE7E6A7B5C4F,
 				9D6BF4745D78578627052B3F,
 				ED969DA7CD6A232D61C81DE4,
 				AC34CBE701FCF09EFE568FAD,
@@ -652,7 +663,6 @@
 			isa = PBXGroup;
 			children = (
 				88FFD890BFFD58F228F560A6,
-				F1983FBDEC60992AC505B0C4,
 				359DAF351E2E9F5DD1A36ECD,
 				7815686F8DF2D6C9DB7F26F0,
 			);
@@ -686,6 +696,14 @@
 			path = People;
 			sourceTree = "<group>";
 		};
+		9A0041FDA9BFCE7E6A7B5C4F = {
+			isa = PBXGroup;
+			children = (
+				BC4D9136A2AA6C2086FB9FDB,
+			);
+			path = Keyboard;
+			sourceTree = "<group>";
+		};
 		9B1D0F866AC7250CA9E2BCB2 = {
 			isa = PBXGroup;
 			children = (
@@ -705,6 +723,7 @@
 		A24205ED65AF3A1FAAC74EE2 = {
 			isa = PBXGroup;
 			children = (
+				EC3EE85789466B1C45145BEF,
 				63B93340F4A077F9888F6942,
 			);
 			path = Home;
@@ -1007,7 +1026,9 @@
 				278F38267F23869A78CF3597,
 				17495D5AAF550C330184EE27,
 				79E9FBA1A874F8BAD1E34801,
+				5F79E549CEB484964CF527BF,
 				930D90087D6792655B328DEA,
+				F1D33C4AB8D796FA6E0FA03E,
 				ACBF18FCF85D9E8D7C72F3D7,
 				55ACD46D4A9071ECBA766350,
 				2482164C2A106EE1D3451F13,
@@ -1016,7 +1037,6 @@
 				3964758FABF4916A4105989D,
 				4F8F40F39D65FF7B06B6C1F3,
 				1134124CD48E485FD0307999,
-				3419C9FED3E7C0EF8BACB22D,
 				28CEC48E26811F3E0DB8FE3D,
 				307FA22B7AF5B4C6BDAB18CD,
 				40D99128FB73DF1550D240A8,

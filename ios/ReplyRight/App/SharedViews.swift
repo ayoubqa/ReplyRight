@@ -194,6 +194,29 @@ struct ScreenHeader: View {
     }
 }
 
+/// Opens Settings. Sits at the top of every tab, where iOS apps keep the account.
+struct ProfileButton: View {
+    @Environment(AppModel.self) private var app
+    @ScaledMetric(relativeTo: .title2) private var size: CGFloat = 26
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            app.showsSettings = true
+        } label: {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: size, weight: .regular))
+                .foregroundStyle(Color.rrTextSecondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.rrPress)
+        .accessibilityLabel("Settings")
+        .accessibilityHint("My Voice, your plan, privacy and appearance")
+        .accessibilityIdentifier("profile-button")
+    }
+}
+
 /// A row that opens something, used in settings-style lists.
 struct NavigationRow: View {
     let title: String

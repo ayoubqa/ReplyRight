@@ -3,15 +3,27 @@ import ReplyRightUI
 import StoreKit
 import SwiftUI
 
-struct YouTab: View {
+/// Settings, opened from the profile button on any tab. Not a tab of its own.
+struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
         NavigationStack {
             YouView()
+                .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("settings-done")
+                    }
+                }
         }
     }
 }
 
-/// Everything about the user and their setup: voice, people, keyboard, plan, privacy.
+/// The user's setup: voice, plan, privacy, appearance and help. People and the
+/// keyboard have their own tabs.
 struct YouView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openURL) private var openURL
@@ -22,12 +34,6 @@ struct YouView: View {
         @Bindable var app = app
 
         ScreenScroll {
-            ScreenHeader(
-                lead: "All about you",
-                emphasis: ""
-            )
-            .padding(.top, RRSpace.l)
-
             planCard
 
             VStack(spacing: 0) {
@@ -38,21 +44,15 @@ struct YouView: View {
                 }
                 .accessibilityIdentifier("you-voice")
                 rowDivider
-                NavigationLink {
-                    PeopleView()
+                Button {
+                    app.showsSettings = false
+                    app.selectedTab = .keyboard
                 } label: {
                     NavigationRow(
-                        title: "People",
-                        subtitle: "Context about who you're talking to.",
-                        systemImage: "person.2",
-                        trailing: app.people.isEmpty ? nil : "\(app.people.count)"
+                        title: "ReplyRight keyboard",
+                        subtitle: app.keyboardStatus.title,
+                        systemImage: "keyboard"
                     )
-                }
-                rowDivider
-                NavigationLink {
-                    KeyboardSetupView()
-                } label: {
-                    NavigationRow(title: "ReplyRight keyboard", subtitle: "Suggestions right where you type.", systemImage: "keyboard")
                 }
                 .accessibilityIdentifier("you-keyboard")
                 rowDivider
@@ -63,8 +63,8 @@ struct YouView: View {
                 }
                 .accessibilityIdentifier("you-privacy")
                 rowDivider
-                Button {
-                    app.showsConnection = true
+                NavigationLink {
+                    ConnectionView()
                 } label: {
                     NavigationRow(
                         title: "Connection",
@@ -121,7 +121,6 @@ struct YouView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .multilineTextAlignment(.center)
         }
-        .toolbar(.hidden, for: .navigationBar)
         .manageSubscriptionsSheet(isPresented: $showsManageSubscription)
     }
 

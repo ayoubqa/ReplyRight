@@ -25,7 +25,7 @@ struct PrivacyCenterView: View {
                 Fact("Screenshots are resized and stripped of metadata on your iPhone first.")
                 Fact("Our server reads them in memory, writes your replies, and discards them. Nothing is saved to a database or written to logs.")
                 Fact("Your voice profile travels with each request and isn't stored on our servers.")
-                Fact("When you pick someone from your notebook, their name, where things stand and the details you switched on travel with that one request. Their photo, your saved replies and anything switched off never do.")
+                Fact("When you pick someone from People, their name, where things stand and the details you switched on travel with that one request. Their photo, your saved replies and anything switched off never do.")
                 Fact("Practising with the coach never uses a real person's profile.")
                 Fact("A random install ID counts daily usage. It isn't tied to you or your Apple Account.")
             }
@@ -90,6 +90,12 @@ struct PrivacyCenterView: View {
                         pendingErase = .voice
                     }
                 }
+
+                Text("Also kept here, with no text in them: when your keyboard last checked in, your keyboard setup steps, and daily counts of suggestions shown and used. They never leave your iPhone and are removed by Erase everything.")
+                    .rrText(.footnote)
+                    .foregroundStyle(Color.rrTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("privacy-local-records")
             }
             .rrCard()
 

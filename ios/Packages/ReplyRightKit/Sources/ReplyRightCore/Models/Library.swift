@@ -79,11 +79,11 @@ public struct FavouriteStyle: Codable, Identifiable, Equatable, Hashable, Sendab
 
 public struct AppSettings: Codable, Equatable, Sendable {
     public enum Appearance: String, Codable, CaseIterable, Identifiable, Sendable {
-        /// Dark. The default: most texting happens after hours.
+        /// Always dark. Installs from before the system default keep it.
         case evening
-        /// Light.
+        /// Always light.
         case daylight
-        /// Follow the system setting.
+        /// Follow the iPhone's light or dark setting. The default for new installs.
         case system
 
         public var id: String { rawValue }
@@ -117,7 +117,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public init(
         hasOnboarded: Bool = false,
         confirmedAdult: Bool = false,
-        appearance: Appearance = .evening,
+        appearance: Appearance = .system,
         learnFromEdits: Bool = false,
         hapticsEnabled: Bool = true,
         keyboardNudgeDismissed: Bool = false,
@@ -145,6 +145,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         hasOnboarded = (try? c.decodeIfPresent(Bool.self, forKey: .hasOnboarded)) ?? false
         confirmedAdult = (try? c.decodeIfPresent(Bool.self, forKey: .confirmedAdult)) ?? false
+        // A settings file without the key predates the choice, when the app was
+        // always dark. Keep those users on Evening rather than switching them.
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .evening
         learnFromEdits = (try? c.decodeIfPresent(Bool.self, forKey: .learnFromEdits)) ?? false
         hapticsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled)) ?? true

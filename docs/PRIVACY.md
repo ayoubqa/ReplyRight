@@ -51,6 +51,12 @@ Voice profile, saved replies, saved conversations, people and their photos, favo
 Two things are temporary by design:
 
 - **Keyboard context**: conversation text the user handed to the keyboard. Text only. Deleted after 24 hours or when cleared.
+
+Small records with no text in them:
+
+- **Keyboard check-in** (`keyboard-checkin.json`): when the keyboard last opened with Full Access, and its version. Written by the keyboard at most every 10 minutes.
+- **Keyboard setup** (`keyboard-setup.json`): when the user said the keyboard was on, when the in-app test ran and whether Full Access was on, and when the Home card was put away.
+- **Activity counts** (`activity.json`): per day, how many live suggestion sets were shown and how many suggestions were copied or inserted, with the keyboard's share. Numbers only, kept 12 weeks. Never sent anywhere; there is no analytics upload. The Privacy Center lists these three records; Erase everything removes them.
 - **Share inbox**: something shared to ReplyRight "for later", including its screenshots. Deleted when opened, when dismissed, or after 2 hours.
 
 The Privacy Center in the app deletes any category, or everything. Erasing everything keeps only the install id (so daily limits still work) and the subscription record (so Pro is not lost).
@@ -60,8 +66,9 @@ The Privacy Center in the app deletes any category, or everything. Erasing every
 - It can see only the text field being edited. It cannot read other apps' conversations and never claims to.
 - Typing works without Full Access. Full Access is requested only because iOS requires it for network use, and the app explains that in plain language.
 - With Full Access on, the keyboard still makes no request while the user types. Requests happen only on an explicit tap.
+- The keyboard reports to the app only through the check-in and the activity counts above, or by typing its test sentence when the user asks it to. The app never claims to detect the keyboard on its own (`docs/KEYBOARD.md`).
 - Nothing typed is stored. The typing engine is a pure state machine that keeps no text.
-- The clipboard is read only when the user taps "Use copied message".
+- The clipboard is read only after the user taps Reply (to offer what they copied, shown back before anything is sent and kept in memory only) or "Use copied message". Text that looks like a password, a code, a card or phone number, or a link is not offered (`CopiedText`).
 - AI features are switched off in secure fields and in fields marked as passwords, one-time codes, payment details or usernames, and on number pads (`FieldSensitivity`).
 
 ## What the product will not do

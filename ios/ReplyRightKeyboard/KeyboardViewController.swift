@@ -20,12 +20,18 @@ final class KeyboardRootView: UIInputView, UIInputViewAudioFeedback {
 ///
 /// Whose profile is used as context is always the user's choice, made in the
 /// Reply panel or in the app. Only the parts of a profile the user allowed are sent.
+///
+/// What it tells the app: with Full Access, a check-in (when it last opened, its
+/// version) and daily counts of suggestions shown and inserted. Numbers and
+/// dates only, never text. Without Full Access it cannot write anything the app
+/// reads; the only signal then is the test sentence it types when asked.
 final class KeyboardViewController: UIInputViewController {
     private enum Panel: Equatable {
         case reply
         case rewrite
         case saved
         case fullAccess
+        case status
     }
 
     private enum PendingAction {
@@ -44,6 +50,7 @@ final class KeyboardViewController: UIInputViewController {
         case results
         case failure
         case locked
+        case status
     }
 
     private let store = SharedStore.shared
@@ -76,6 +83,15 @@ final class KeyboardViewController: UIInputViewController {
     private var resultsReplaceDraft = false
     private var lastAction: PendingAction?
     private var work: Task<Void, Never>?
+    /// True when the suggestions on screen came from live AI, so inserting one
+    /// counts as using a suggestion. Demo samples and saved lines do not count.
+    private var shownAreLive = false
+    /// Copied text offered as "what they said" after the user tapped Reply.
+    /// Held in memory only; it is saved for later only if the user taps "Use copied message".
+    private var clipboardCandidate: KeyboardContext?
+    /// The clipboard's change count when the user said "Not this", so the same
+    /// copied text is not offered again.
+    private var declinedClipboardChange: Int?
 
     private static let toolbarHeight: CGFloat = 46
     /// Where the keyboard remembers its own language choice. This is the
@@ -126,6 +142,7 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.onSaved = { [weak self] in self?.openSaved() }
         toolbar.onLanguage = { [weak self] in self?.cycleLanguage() }
         toolbar.onBackToKeys = { [weak self] in self?.closePanel() }
+        toolbar.onStatus = { [weak self] in self?.openStatus() }
 
         panelView.onChip = { [weak self] id in self?.handleChip(id) }
         panelView.onPersonChip = { [weak self] id in self?.handlePersonChip(id) }
@@ -144,12 +161,39 @@ final class KeyboardViewController: UIInputViewController {
         }
         toolbar.setLanguage(code: language.shortCode, name: language.title)
         configureForField(force: true)
+        checkIn()
+    }
+
+    /// Tells the app the keyboard opened with Full Access. Without it the shared
+    /// container is closed to writes, so nothing is written and the app keeps
+    /// showing what it last knew. At most one write every ten minutes.
+    private func checkIn() {
+        guard hasFullAccess else { return }
+        let store = self.store
+        DispatchQueue.global(qos: .utility).async {
+            let now = Date()
+            if let last = store.loadKeyboardCheckIn(), last.hasFullAccess, now.timeIntervalSince(last.lastSeen) < 600 {
+                return
+            }
+            store.saveKeyboardCheckIn(KeyboardCheckIn(lastSeen: now, hasFullAccess: true, keyboardVersion: AppConfig.appVersion))
+        }
+    }
+
+    /// Adds to the on-device activity counts. Needs Full Access, which every
+    /// counted action already requires; without it the write quietly fails.
+    private func recordActivity(_ event: ProductActivity.Event) {
+        guard hasFullAccess else { return }
+        let store = self.store
+        DispatchQueue.global(qos: .utility).async {
+            _ = store.recordActivity(event)
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         work?.cancel()
         work = nil
+        clipboardCandidate = nil
         keysView.stopRepeating()
         keysView.hideCallout()
     }
@@ -326,7 +370,9 @@ final class KeyboardViewController: UIInputViewController {
         panel = nil
         screen = .none
         shownOptions = []
+        shownAreLive = false
         adjustment = nil
+        clipboardCandidate = nil
         toolbar.setMode(isSensitive ? .paused : .typing)
         if wasShowingPanel {
             crossfade(from: panelView, to: keysView)
@@ -385,7 +431,7 @@ final class KeyboardViewController: UIInputViewController {
         show(.fullAccess, title: "Full Access")
         showNote(
             title: "Suggestions need Full Access",
-            detail: "iOS only lets a keyboard use the internet with Full Access. ReplyRight sends text only when you tap Reply or Rewrite, never your keystrokes, and typing works without it.\n\nTo turn it on: Settings, General, Keyboard, Keyboards, ReplyRight, Allow Full Access."
+            detail: "iOS only lets a keyboard use the internet with Full Access. ReplyRight sends text only when you tap Reply or Rewrite, never your keystrokes, and typing works without it.\n\nTo turn it on: Settings, General, Keyboard, Keyboards, ReplyRight, Allow Full Access. The Keyboard tab in the ReplyRight app walks you through it."
         )
         return false
     }
@@ -397,7 +443,25 @@ final class KeyboardViewController: UIInputViewController {
         seenReplies = []
         adjustment = nil
         show(.reply, title: "Reply")
+        offerCopiedMessage()
         renderReplySetup()
+    }
+
+    /// When nothing was handed over yet and the user has copied something that
+    /// reads like a message, offer it straight away instead of asking them to
+    /// tap "Use copied message". Read only because the user tapped Reply, shown
+    /// back before anything is sent, and kept in memory only.
+    private func offerCopiedMessage() {
+        guard store.loadKeyboardContext() == nil, clipboardCandidate == nil else { return }
+        let pasteboard = UIPasteboard.general
+        guard pasteboard.hasStrings, pasteboard.changeCount != declinedClipboardChange else { return }
+        guard let copied = pasteboard.string?.trimmed, CopiedText.looksLikeMessage(copied) else { return }
+        clipboardCandidate = KeyboardContext(text: copied, source: .clipboard)
+    }
+
+    /// What the reply is to: what was handed over, otherwise the copied text on offer.
+    private func replyContext() -> KeyboardContext? {
+        store.loadKeyboardContext() ?? clipboardCandidate
     }
 
     /// The profile used as context: what the user picked here, otherwise the
@@ -412,7 +476,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func renderReplySetup() {
-        guard let context = store.loadKeyboardContext() else {
+        guard let context = replyContext() else {
             screen = .replyNeedsContext
             let hasText = !currentDraft().isEmpty
             panelView.showMessage(
@@ -448,6 +512,10 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         var notes: [String] = []
+        let isFromClipboard = store.loadKeyboardContext() == nil
+        if isFromClipboard {
+            notes.append("This is what you copied. Tap Not this if it's something else.")
+        }
         if !currentDraft().isEmpty {
             notes.append("I'll use what you've typed as a starting point.")
         }
@@ -462,7 +530,7 @@ final class KeyboardViewController: UIInputViewController {
             chips: chips,
             people: personChips,
             primaryTitle: "Write replies",
-            secondaryTitle: "Clear",
+            secondaryTitle: isFromClipboard ? "Not this" : "Clear",
             footnote: notes.isEmpty ? nil : notes.joined(separator: " ")
         )
     }
@@ -479,6 +547,7 @@ final class KeyboardViewController: UIInputViewController {
             )
             return
         }
+        clipboardCandidate = nil
         store.saveKeyboardContext(KeyboardContext(text: copied, source: .clipboard))
         renderReplySetup()
     }
@@ -520,7 +589,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func writeReplies(regenerate: Bool) {
-        guard let context = store.loadKeyboardContext() else {
+        guard let context = replyContext() else {
             renderReplySetup()
             return
         }
@@ -557,6 +626,9 @@ final class KeyboardViewController: UIInputViewController {
                 self.seenReplies = Array(
                     (self.seenReplies + envelope.result.replies.map(\.text)).suffix(RequestLimits.avoidReplies)
                 )
+                if envelope.mode != .demo, !envelope.result.replies.isEmpty {
+                    self.recordActivity(.suggestionsShown(.keyboard))
+                }
                 self.presentResults(
                     envelope.result.replies,
                     note: envelope.result.headsUp ?? envelope.result.note,
@@ -626,6 +698,9 @@ final class KeyboardViewController: UIInputViewController {
                 let envelope = try await self.api.refine(request)
                 guard !Task.isCancelled else { return }
                 self.store.record(usage: envelope.usage, mode: envelope.mode)
+                if envelope.mode != .demo, !envelope.result.options.isEmpty {
+                    self.recordActivity(.suggestionsShown(.keyboard))
+                }
                 self.presentResults(
                     envelope.result.options,
                     note: envelope.result.note ?? "",
@@ -649,13 +724,21 @@ final class KeyboardViewController: UIInputViewController {
         show(.saved, title: "Saved")
         let saved = store.loadSavedReplies()
         guard !saved.isEmpty else {
-            showNote(
-                title: "Nothing saved yet",
-                detail: "Bookmark a reply in the ReplyRight app and it will be waiting here, ready to drop into any chat."
-            )
+            if hasFullAccess {
+                showNote(
+                    title: "Nothing saved yet",
+                    detail: "Bookmark a reply in the ReplyRight app and it will be waiting here, ready to drop into any chat."
+                )
+            } else {
+                showNote(
+                    title: "Saved lines live in the app",
+                    detail: "Lines you bookmark in ReplyRight show up here. Without Full Access, iOS may not let the keyboard read them, so if you've saved some and see none, turn on Full Access in Settings, General, Keyboard, Keyboards, ReplyRight."
+                )
+            }
             return
         }
         resultsReplaceDraft = false
+        shownAreLive = false
         lastAction = nil
         shownOptions = saved.map { Suggestion(style: $0.style, text: $0.text, why: "") }
         screen = .results
@@ -665,6 +748,38 @@ final class KeyboardViewController: UIInputViewController {
             secondaryTitle: nil,
             footnote: nil
         )
+    }
+
+    // MARK: Status
+
+    /// What the keyboard knows about itself, and a way to show the app it works.
+    private func openStatus() {
+        show(.status, title: "ReplyRight Keyboard")
+        screen = .status
+        let detail: String
+        if hasFullAccess {
+            detail = "Full Access is on, so Reply and Rewrite can write suggestions. Text leaves your iPhone only when you tap one of them, never while you type."
+        } else {
+            detail = "Full Access is off. Typing works and nothing leaves your iPhone. Reply and Rewrite need Full Access, because iOS only lets a keyboard reach the internet with it."
+        }
+        let canType = !isSensitive
+        panelView.showMessage(
+            title: hasFullAccess ? "Ready to help" : "Typing only",
+            detail: detail + (canType
+                ? "\n\nTesting setup? Open the Keyboard tab in ReplyRight, tap its test box, then tap below. It types one short line you can delete."
+                : ""),
+            primaryTitle: canType ? "Type a test message" : nil,
+            secondaryTitle: "Back to keys"
+        )
+    }
+
+    /// Types the fixed test sentence. ReplyRight's test field recognises it,
+    /// which is how the app learns the keyboard works even without Full Access.
+    private func typeTestMessage() {
+        guard !isSensitive else { return }
+        let phrase = KeyboardHandshake.phrase(hasFullAccess: hasFullAccess)
+        closePanel()
+        insert(phrase, replacingDraft: false)
     }
 
     // MARK: Results and failures
@@ -677,6 +792,7 @@ final class KeyboardViewController: UIInputViewController {
         allowsAdjusting: Bool
     ) {
         shownOptions = options
+        shownAreLive = !isDemo
         guard !options.isEmpty else {
             showNote(
                 title: "No suggestions this time",
@@ -789,6 +905,8 @@ final class KeyboardViewController: UIInputViewController {
             writeReplies(regenerate: false)
         case .failure:
             retryLastAction()
+        case .status:
+            typeTestMessage()
         default:
             break
         }
@@ -803,8 +921,14 @@ final class KeyboardViewController: UIInputViewController {
                 useTextInBox()
             }
         case .replySetup:
-            // "Clear": forget the conversation that was shared with the keyboard.
-            store.clearKeyboardContext()
+            if store.loadKeyboardContext() == nil, clipboardCandidate != nil {
+                // "Not this": the copied text was something else. Don't offer it again.
+                clipboardCandidate = nil
+                declinedClipboardChange = UIPasteboard.general.changeCount
+            } else {
+                // "Clear": forget the conversation that was shared with the keyboard.
+                store.clearKeyboardContext()
+            }
             renderReplySetup()
         case .results:
             switch lastAction {
@@ -837,6 +961,9 @@ final class KeyboardViewController: UIInputViewController {
         guard screen == .results, shownOptions.indices.contains(index) else { return }
         let text = shownOptions[index].text
         let replace = resultsReplaceDraft
+        if shownAreLive {
+            recordActivity(.suggestionUsed(.keyboard))
+        }
         closePanel()
         insert(text, replacingDraft: replace)
     }

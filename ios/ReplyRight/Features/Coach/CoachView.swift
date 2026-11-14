@@ -387,6 +387,11 @@ private struct CoachLobby: View {
 
     var body: some View {
         ScreenScroll(spacing: RRSpace.l) {
+            HStack {
+                Spacer()
+                ProfileButton()
+            }
+
             VStack(alignment: .leading, spacing: RRSpace.xs) {
                 EditorialTitle("What do you want to get better at?", style: .display)
                 Text("Honest feedback, a little practice, and the reasons behind it. So next time you need me less.")
@@ -394,7 +399,6 @@ private struct CoachLobby: View {
                     .foregroundStyle(Color.rrTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, RRSpace.l)
 
             ConnectionNotice()
 

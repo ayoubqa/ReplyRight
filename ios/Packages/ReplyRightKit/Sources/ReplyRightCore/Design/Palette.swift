@@ -79,7 +79,9 @@ public enum Palette {
     // Text
     public static let textPrimary = ColorPair(dark: bone, light: ink)
     public static let textSecondary = ColorPair(dark: 0xA9BDB3, light: 0x4F6B62)
-    public static let textTertiary = ColorPair(dark: 0x7C958A, light: 0x758C83)
+    /// Captions and hints. At least 4.5:1 on the ground, surfaces and raised
+    /// surfaces in both appearances (WCAG AA for body text).
+    public static let textTertiary = ColorPair(dark: 0x8AA398, light: 0x5A6E66)
 
     // The voice: blush after dark, raspberry in daylight
     public static let accent = ColorPair(dark: blush, light: raspberry)

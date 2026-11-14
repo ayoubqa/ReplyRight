@@ -1,20 +1,33 @@
 import ReplyRightCore
 import ReplyRightUI
 import SwiftUI
+import UIKit
 
-/// First run: meet ReplyRight, confirm you are an adult, and sketch how you text.
-/// No account, and every answer can be changed later in My Voice.
+/// First run in three screens: meet ReplyRight and confirm you are an adult,
+/// sketch how you text, then get a first real result. No account, and every
+/// answer can be changed later in My Voice. The keyboard is introduced on
+/// Home afterwards, once the user has seen what ReplyRight does.
 struct OnboardingView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openURL) private var openURL
 
     enum Step: Int, CaseIterable {
-        case welcome, age, goals, personality, texting, languages, tone, ready
+        case welcome, style, firstResult
+    }
+
+    /// Where the first result comes from. The example costs nothing: its
+    /// replies are written in advance and no request is made. A pasted chat
+    /// makes exactly one request, when the user taps the button.
+    enum Source: Hashable {
+        case example
+        case pasted
     }
 
     @State private var step: Step = .welcome
     @State private var draft = VoiceProfile.standard
     @State private var isAdult = false
+    @State private var source: Source = .example
+    @State private var pasted = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +42,7 @@ struct OnboardingView: View {
                     .id(step)
                     .transition(.opacity.combined(with: .offset(y: 12)))
             }
+            .scrollDismissesKeyboard(.interactively)
             bottomBar
         }
         .rrScreenBackground(intensity: 1.2)
@@ -53,6 +67,7 @@ struct OnboardingView: View {
             .opacity(step == .welcome ? 0 : 1)
             .disabled(step == .welcome)
             .accessibilityLabel("Back")
+            .accessibilityHidden(step == .welcome)
 
             Spacer()
 
@@ -83,10 +98,19 @@ struct OnboardingView: View {
             .disabled(!canAdvance)
             .accessibilityIdentifier("onboarding-continue")
 
-            if step == .age {
+            switch step {
+            case .welcome:
                 Text("ReplyRight is only for people aged 18 and over.")
                     .rrText(.caption)
                     .foregroundStyle(Color.rrTextTertiary)
+            case .style:
+                EmptyView()
+            case .firstResult:
+                Button("Skip for now") {
+                    finish(with: nil)
+                }
+                .buttonStyle(.rrQuiet)
+                .accessibilityIdentifier("onboarding-skip")
             }
         }
         .padding(.horizontal, RRSpace.screen)
@@ -97,16 +121,16 @@ struct OnboardingView: View {
     private var primaryTitle: String {
         switch step {
         case .welcome: return "Let's begin"
-        case .ready: return "Show me what they said"
-        default: return "Continue"
+        case .style: return "Continue"
+        case .firstResult: return source == .example ? "Show me how it works" : "Write my first replies"
         }
     }
 
     private var canAdvance: Bool {
         switch step {
-        case .age: return isAdult
-        case .languages: return !draft.languages.isEmpty
-        default: return true
+        case .welcome: return isAdult
+        case .style: return !draft.languages.isEmpty
+        case .firstResult: return source == .example || pasted.trimmed.count >= 2
         }
     }
 
@@ -115,7 +139,10 @@ struct OnboardingView: View {
         if let next = Step(rawValue: step.rawValue + 1) {
             move(to: next)
         } else {
-            finish()
+            switch source {
+            case .example: finish(with: .example)
+            case .pasted: finish(with: .conversation(pasted.trimmed))
+            }
         }
     }
 
@@ -125,13 +152,37 @@ struct OnboardingView: View {
         }
     }
 
-    private func finish() {
+    private enum FirstResult {
+        /// The worked example. No request.
+        case example
+        /// The user's own chat. One replies request, nothing else.
+        case conversation(String)
+    }
+
+    /// Saves the answers and opens the app on the first result, if one was chosen.
+    private func finish(with first: FirstResult?) {
         app.voice = draft
         var settings = app.settings
         settings.confirmedAdult = true
         settings.hasOnboarded = true
         app.settings = settings
         Haptics.success()
+
+        switch first {
+        case nil:
+            break
+        case .example?:
+            app.selectedTab = .home
+            app.homePath = [.example]
+        case .conversation(let text)?:
+            guard !text.isEmpty else { return }
+            // Straight to three replies: one request, no separate reading step.
+            app.compose.reset()
+            app.compose.text = text
+            app.selectedTab = .home
+            app.homePath = [.replies]
+            app.compose.startReplies(app: app)
+        }
     }
 
     // MARK: Steps
@@ -140,110 +191,68 @@ struct OnboardingView: View {
     private var content: some View {
         switch step {
         case .welcome:
-            WelcomeStep()
-        case .age:
-            ageStep
-        case .goals:
-            VStack(alignment: .leading, spacing: RRSpace.xl) {
-                ScreenHeader(
-                    lead: "What would ",
-                    emphasis: "help most?",
-                    subtitle: "Pick as many as you like. This just helps me know where to start."
-                )
-                MultiChoiceGroup(
-                    title: "I'd like help with",
-                    options: VoiceProfile.Goal.allCases,
-                    label: { $0.title },
-                    selection: $draft.goals
-                )
-            }
-        case .personality:
-            VStack(alignment: .leading, spacing: RRSpace.xl) {
-                ScreenHeader(
-                    lead: "How would a friend ",
-                    emphasis: "describe you?",
-                    subtitle: "Choose up to two. There's no better or worse answer. Shy people send great texts."
-                )
-                MultiChoiceGroup(
-                    title: "I'm naturally",
-                    options: VoiceProfile.Personality.allCases,
-                    label: { $0.title },
-                    limit: 2,
-                    selection: $draft.personality
-                )
-            }
-        case .texting:
-            textingStep
-        case .languages:
-            languagesStep
-        case .tone:
-            VStack(alignment: .leading, spacing: RRSpace.xl) {
-                ScreenHeader(
-                    lead: "With your crush, you'd like to ",
-                    emphasis: "sound…",
-                    subtitle: "This becomes your default. You can pick something different for any message."
-                )
-                VStack(spacing: RRSpace.xs) {
-                    ForEach(Tone.allCases) { tone in
-                        ToneRow(tone: tone, isSelected: draft.defaultTone == tone) {
-                            draft.defaultTone = tone
-                            Haptics.select()
-                        }
-                    }
-                }
-            }
-        case .ready:
-            readyStep
+            welcomeStep
+        case .style:
+            styleStep
+        case .firstResult:
+            firstResultStep
         }
     }
 
-    private var ageStep: some View {
+    // MARK: 1. Welcome
+
+    private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: RRSpace.xl) {
-            ScreenHeader(
-                lead: "First, ",
-                emphasis: "a quick one.",
-                subtitle: "ReplyRight helps adults talk to people they're interested in. Please confirm that's you."
-            )
+            WelcomeStep()
 
-            Button {
-                isAdult.toggle()
-                Haptics.select()
-            } label: {
-                HStack(spacing: RRSpace.m) {
-                    Image(systemName: isAdult ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 26, weight: .regular))
-                        .foregroundStyle(isAdult ? Color.rrAccent : Color.rrTextTertiary)
-                    Text("I'm 18 or older")
-                        .rrText(.headline)
-                        .foregroundStyle(Color.rrText)
-                    Spacer()
+            VStack(alignment: .leading, spacing: RRSpace.s) {
+                Button {
+                    isAdult.toggle()
+                    Haptics.select()
+                } label: {
+                    HStack(spacing: RRSpace.m) {
+                        Image(systemName: isAdult ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 26, weight: .regular))
+                            .foregroundStyle(isAdult ? Color.rrAccent : Color.rrTextSecondary)
+                            .accessibilityHidden(true)
+                        Text("I'm 18 or older")
+                            .rrText(.headline)
+                            .foregroundStyle(Color.rrText)
+                        Spacer()
+                    }
+                    .rrCard()
                 }
-                .rrCard()
-            }
-            .buttonStyle(.rrPress)
-            .accessibilityAddTraits(isAdult ? .isSelected : [])
-            .accessibilityIdentifier("onboarding-adult")
+                .buttonStyle(.rrPress)
+                .accessibilityLabel("I'm 18 or older")
+                .accessibilityValue(isAdult ? "Confirmed" : "Not confirmed")
+                .accessibilityAddTraits(isAdult ? .isSelected : [])
+                .accessibilityIdentifier("onboarding-adult")
 
-            VStack(alignment: .leading, spacing: RRSpace.xs) {
-                Text("By continuing you agree to the Terms of Use and Privacy Policy.")
+                VStack(alignment: .leading, spacing: RRSpace.xs) {
+                    Text("By continuing you agree to the Terms of Use and Privacy Policy.")
+                        .rrText(.footnote)
+                        .foregroundStyle(Color.rrTextSecondary)
+                    HStack(spacing: RRSpace.m) {
+                        Button("Terms") { openURL(AppConfig.termsURL(base: app.apiBaseURL)) }
+                            .frame(minHeight: 44)
+                        Button("Privacy") { openURL(AppConfig.privacyURL(base: app.apiBaseURL)) }
+                            .frame(minHeight: 44)
+                    }
                     .rrText(.footnote)
-                    .foregroundStyle(Color.rrTextSecondary)
-                HStack(spacing: RRSpace.m) {
-                    Button("Terms") { openURL(AppConfig.termsURL(base: app.apiBaseURL)) }
-                    Button("Privacy") { openURL(AppConfig.privacyURL(base: app.apiBaseURL)) }
+                    .tint(Color.rrAccent)
                 }
-                .rrText(.footnote)
-                .tint(Color.rrAccent)
             }
         }
     }
 
-    private var textingStep: some View {
+    // MARK: 2. Communication style
+
+    private var styleStep: some View {
         VStack(alignment: .leading, spacing: RRSpace.xl) {
             ScreenHeader(
                 lead: "How do ",
                 emphasis: "you text?",
-                subtitle: "Watch the message change. Stop when it looks like something you'd send."
+                subtitle: "Watch the message change. Stop when it looks like something you'd send. All of this can change later in My Voice."
             )
 
             VStack(spacing: RRSpace.xs) {
@@ -253,6 +262,8 @@ struct OnboardingView: View {
                     .animation(.rrSnappy, value: draft.emoji)
             }
             .padding(.vertical, RRSpace.xs)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Preview: \(TextingPreview.message(length: draft.length, emoji: draft.emoji))")
 
             ChoiceGroup(
                 title: "My messages are usually",
@@ -266,17 +277,30 @@ struct OnboardingView: View {
                 label: { $0.title },
                 selection: $draft.emoji
             )
+
+            VStack(alignment: .leading, spacing: RRSpace.s) {
+                Eyebrow("With someone I like, I'd rather sound")
+                FlowLayout {
+                    ForEach(Tone.allCases) { tone in
+                        RRChip(tone.title, isSelected: draft.defaultTone == tone) {
+                            draft.defaultTone = tone
+                            Haptics.select()
+                        }
+                        .accessibilityHint(tone.blurb)
+                    }
+                }
+                Text(draft.defaultTone.blurb)
+                    .rrText(.footnote)
+                    .foregroundStyle(Color.rrTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            languages
         }
     }
 
-    private var languagesStep: some View {
-        VStack(alignment: .leading, spacing: RRSpace.xl) {
-            ScreenHeader(
-                lead: "Which languages do you ",
-                emphasis: "text in?",
-                subtitle: "Replies are written the way a native texter would say it, never translated word for word."
-            )
-
+    private var languages: some View {
+        VStack(alignment: .leading, spacing: RRSpace.l) {
             VStack(alignment: .leading, spacing: RRSpace.s) {
                 Eyebrow("I text in")
                 FlowLayout {
@@ -288,12 +312,13 @@ struct OnboardingView: View {
                         } else {
                             Text("\(language.nativeName) · soon")
                                 .rrText(.callout)
-                                .foregroundStyle(Color.rrTextTertiary)
+                                .foregroundStyle(Color.rrTextSecondary)
                                 .padding(.horizontal, 14)
                                 .frame(minHeight: 40)
                                 .overlay {
                                     Capsule().strokeBorder(Color.rrLine, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                                 }
+                                .accessibilityLabel("\(language.nativeName), coming soon")
                         }
                     }
                 }
@@ -313,6 +338,10 @@ struct OnboardingView: View {
                         }
                     }
                 }
+                Text("Replies are written the way a native texter would say it, never translated word for word.")
+                    .rrText(.footnote)
+                    .foregroundStyle(Color.rrTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -329,32 +358,62 @@ struct OnboardingView: View {
         Haptics.select()
     }
 
-    private var readyStep: some View {
-        VStack(alignment: .leading, spacing: RRSpace.xl) {
+    // MARK: 3. First result
+
+    private var firstResultStep: some View {
+        VStack(alignment: .leading, spacing: RRSpace.l) {
             ScreenHeader(
-                lead: "That's ",
-                emphasis: "you.",
-                subtitle: "I'll keep this in mind every time. Change anything, any time, in My Voice."
+                lead: "Let's write your ",
+                emphasis: "first reply.",
+                subtitle: "See a worked example, or paste a real chat and get three different ways to answer."
             )
 
-            VStack(alignment: .leading, spacing: RRSpace.m) {
-                SummaryLine(label: "Sounds", value: draft.defaultTone.title)
-                if !draft.personality.isEmpty {
-                    SummaryLine(label: "Naturally", value: draft.personality.map(\.title).joined(separator: ", "))
-                }
-                SummaryLine(label: "Messages", value: "\(draft.length.title), emoji \(draft.emoji.title.lowercased())")
-                SummaryLine(
-                    label: "Languages",
-                    value: draft.languages.map { ReplyLanguage.name(for: $0) }.joined(separator: ", ")
-                )
+            Picker("Conversation", selection: $source) {
+                Text("Use an example").tag(Source.example)
+                Text("Paste my own").tag(Source.pasted)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .rrCard(padding: RRSpace.l)
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("onboarding-source")
+
+            switch source {
+            case .example:
+                VStack(alignment: .leading, spacing: RRSpace.xs) {
+                    Label("A made-up chat. Its example replies are written in advance, so nothing is sent.", systemImage: "sparkles")
+                        .rrText(.footnote)
+                        .foregroundStyle(Color.rrHighlightInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(Array(SampleConversation.lines.enumerated()), id: \.offset) { _, line in
+                        MessageBubble(line.text, side: line.speaker == .them ? .theirs : .mine)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("onboarding-example")
+            case .pasted:
+                VStack(alignment: .leading, spacing: RRSpace.s) {
+                    RRTextArea(text: $pasted, placeholder: "Paste their message, or the last few lines of the chat.", minHeight: 120)
+                        .accessibilityLabel("Their message")
+                        .accessibilityIdentifier("onboarding-paste-field")
+                    Button {
+                        if let copied = UIPasteboard.general.string?.trimmed, !copied.isEmpty {
+                            pasted = copied
+                            Haptics.tap()
+                        } else {
+                            app.toast = "There's no text on the clipboard."
+                        }
+                    } label: {
+                        Label("Paste", systemImage: "doc.on.clipboard")
+                    }
+                    .buttonStyle(.rrSecondaryCompact)
+                }
+                .rrPanel()
+            }
 
             VStack(alignment: .leading, spacing: RRSpace.xs) {
-                Label("Nothing is sent anywhere until you ask for a reply.", systemImage: "lock")
-                Label("Screenshots are read once and never stored.", systemImage: "photo")
-                Label("You always choose what gets sent.", systemImage: "hand.tap")
+                if source == .pasted {
+                    Label("Nothing is sent until you tap Write my first replies.", systemImage: "lock")
+                    Label("This uses one of today's free replies.", systemImage: "number")
+                }
+                Label("ReplyRight never sends anything to anyone. You copy what you like.", systemImage: "hand.tap")
             }
             .rrText(.footnote)
             .foregroundStyle(Color.rrTextSecondary)
@@ -415,61 +474,6 @@ private struct WelcomeStep: View {
                     stage = index + 1
                 }
             }
-        }
-    }
-}
-
-private struct ToneRow: View {
-    let tone: Tone
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tone.title)
-                        .rrText(.headline)
-                        .foregroundStyle(Color.rrText)
-                    Text(tone.blurb)
-                        .rrText(.footnote)
-                        .foregroundStyle(Color.rrTextSecondary)
-                }
-                Spacer()
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundStyle(isSelected ? Color.rrAccent : Color.rrTextTertiary)
-            }
-            .padding(.horizontal, RRSpace.m)
-            .padding(.vertical, RRSpace.s)
-            .background {
-                RoundedRectangle(cornerRadius: RRRadius.control, style: .continuous)
-                    .fill(isSelected ? Color.rrAccentSoft : Color.rrSurface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: RRRadius.control, style: .continuous)
-                    .strokeBorder(isSelected ? Color.rrAccent.opacity(0.7) : Color.rrLine, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.rrPress)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-private struct SummaryLine: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: RRSpace.m) {
-            Text(label)
-                .rrText(.eyebrow)
-                .foregroundStyle(Color.rrTextTertiary)
-                .frame(width: 92, alignment: .leading)
-            Text(value)
-                .rrText(.titleSmall)
-                .foregroundStyle(Color.rrText)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

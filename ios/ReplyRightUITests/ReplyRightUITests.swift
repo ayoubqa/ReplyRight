@@ -27,16 +27,96 @@ final class ReplyRightUITests: XCTestCase {
         let next = app.buttons["onboarding-continue"]
         XCTAssertTrue(next.waitForExistence(timeout: 10))
 
-        next.tap() // welcome -> age
+        // Welcome: nothing moves until the user confirms they are an adult.
         XCTAssertFalse(next.isEnabled, "Continue must stay disabled until the user confirms they are an adult")
         app.buttons["onboarding-adult"].tap()
         XCTAssertTrue(next.isEnabled)
 
-        // age, goals, personality, texting, languages, tone, ready
-        for _ in 0..<7 {
-            next.tap()
-        }
+        next.tap() // welcome -> communication style
+        next.tap() // style -> first result
+
+        // The example is the default first result. It makes no request: its
+        // replies are written in advance and say so. This works with no server.
+        XCTAssertTrue(app.descendants(matching: .any)["onboarding-example"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["onboarding-skip"].exists)
+        next.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["example-label"].firstMatch.waitForExistence(timeout: 3),
+            "The example should appear at once, labelled as written in advance, without waiting for the server"
+        )
+        app.buttons["example-try-real"].tap()
         XCTAssertTrue(app.buttons["home-read"].waitForExistence(timeout: 10), "Finishing onboarding should land on Home")
+
+        // The keyboard is introduced on Home, after onboarding, not forced into it.
+        XCTAssertTrue(app.buttons["home-keyboard"].waitForExistence(timeout: 5), "Home should invite the user to set up the keyboard")
+    }
+
+    func testTheHomeExampleMakesNoRequest() throws {
+        let app = launch(skippingOnboarding: true)
+        let example = app.buttons["home-example"]
+        XCTAssertTrue(example.waitForExistence(timeout: 10))
+        example.tap()
+        // Appears at once and is labelled. There is no loading state, because nothing is asked of the server.
+        XCTAssertTrue(app.descendants(matching: .any)["example-label"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["reply-copy"].exists, "The example is not an AI result and cannot be passed off as one")
+    }
+
+    func testTheFourTabsAndSettingsBehindTheProfileButton() throws {
+        let app = launch(skippingOnboarding: true)
+        let tabs = app.tabBars
+        XCTAssertTrue(tabs.buttons["Reply"].waitForExistence(timeout: 10))
+        for name in ["Reply", "Coach", "Keyboard", "People"] {
+            XCTAssertTrue(tabs.buttons[name].exists, "Missing tab \(name)")
+        }
+        XCTAssertFalse(tabs.buttons["You"].exists, "Settings is not a tab any more")
+
+        app.buttons["profile-button"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["settings-done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["you-voice"].exists)
+        app.buttons["settings-done"].tap()
+
+        // Saved lines stay one tap from Home.
+        XCTAssertTrue(app.buttons["home-saved"].waitForExistence(timeout: 5))
+    }
+
+    func testKeyboardStatusOnlyReflectsWhatTheKeyboardReported() throws {
+        let app = launch(skippingOnboarding: true)
+        XCTAssertTrue(app.tabBars.buttons["Keyboard"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["Keyboard"].tap()
+
+        // A fresh install has no evidence, so the app must not claim anything.
+        let badge = app.descendants(matching: .any)["keyboard-status-badge"].firstMatch
+        XCTAssertTrue(badge.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForLabel(badge, "Keyboard status: Not set up"))
+
+        // The setup journey records the user's word, not proof.
+        app.buttons["keyboard-setup"].tap()
+        let confirm = app.buttons["setup-confirm-enabled"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        app.buttons["setup-close"].tap()
+        XCTAssertTrue(waitForLabel(badge, "Keyboard status: Turned on, not tested yet"), "The user's word is shown as not tested")
+
+        // The test field recognises the sentence the ReplyRight keyboard types.
+        // Here the system keyboard types it, which exercises the app's side only.
+        let field = textInput(app, "keyboard-practice")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("ReplyRight Keyboard \u{2713} Full Access off")
+        XCTAssertTrue(waitForLabel(badge, "Keyboard status: Typing only"), "A test without Full Access is limited, not ready")
+    }
+
+    /// A text field or text view by identifier. SwiftUI may draw a multi-line
+    /// `TextField` as either, depending on the iOS version.
+    private func textInput(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
+        let types = [XCUIElement.ElementType.textField.rawValue, XCUIElement.ElementType.textView.rawValue]
+        let predicate = NSPredicate(format: "identifier == %@ AND elementType IN %@", identifier, types)
+        return app.descendants(matching: .any).matching(predicate).firstMatch
+    }
+
+    private func waitForLabel(_ element: XCUIElement, _ label: String, timeout: TimeInterval = 5) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
     func testPastedConversationProducesReadAndThreeLabelledReplies() throws {
@@ -104,13 +184,13 @@ final class ReplyRightUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["How it reads right now"].exists)
     }
 
-    func testAPersonCanBeAddedToTheNotebookAndDeleted() throws {
+    func testAPersonCanBeAddedAndDeleted() throws {
         let app = launch(skippingOnboarding: true)
-        XCTAssertTrue(app.tabBars.buttons["Notebook"].waitForExistence(timeout: 10))
-        app.tabBars.buttons["Notebook"].tap()
+        XCTAssertTrue(app.tabBars.buttons["People"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["People"].tap()
 
         app.buttons["notebook-add-person"].tap()
-        let name = app.textFields["person-alias"]
+        let name = textInput(app, "person-alias")
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
         name.typeText("Sam")
@@ -130,9 +210,12 @@ final class ReplyRightUITests: XCTestCase {
 
     func testPrivacyCenterAndPaywallAreReachable() throws {
         let app = launch(skippingOnboarding: true)
-        XCTAssertTrue(app.tabBars.buttons["You"].waitForExistence(timeout: 10))
-        app.tabBars.buttons["You"].tap()
+        let profile = app.buttons["profile-button"].firstMatch
+        XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        profile.tap()
 
+        // The paywall opens on top of Settings, not behind it.
+        XCTAssertTrue(app.buttons["you-see-pro"].waitForExistence(timeout: 5))
         app.buttons["you-see-pro"].tap()
         XCTAssertTrue(app.buttons["paywall-close"].waitForExistence(timeout: 5))
         app.buttons["paywall-close"].tap()

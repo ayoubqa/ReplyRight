@@ -289,4 +289,19 @@ final class DraftAndSensitivityTests: XCTestCase {
         XCTAssertFalse(FieldSensitivity.isSensitive(isSecure: false, contentType: "", kind: .standard))
         XCTAssertFalse(FieldSensitivity.isSensitive(isSecure: false, contentType: "name", kind: .twitter))
     }
+
+    // MARK: Copied text offered to Reply
+
+    func testOrdinaryMessagesCanBeOfferedFromTheClipboard() {
+        for text in ["ok", "really?", "don't", "see you at 7?", "Them: free friday?\nMe: maybe", "\u{1F602}\u{1F602}", "  haha  "] {
+            XCTAssertTrue(CopiedText.looksLikeMessage(text), text)
+        }
+    }
+
+    func testPasswordsCodesCardsAndLinksAreNotOffered() {
+        for text in ["", "   ", "Hunter22!", "p@ssw0rd", "482913", "4242 4242 4242 4242", "call me 0612-345-678",
+                     "https://example.com/x", "www.example.com", "a1b2c3d4", "#$%&"] {
+            XCTAssertFalse(CopiedText.looksLikeMessage(text), text)
+        }
+    }
 }

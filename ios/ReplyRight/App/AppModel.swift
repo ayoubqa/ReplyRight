@@ -16,6 +16,10 @@ enum HomeRoute: Hashable {
     /// Rework a draft the user already wrote.
     case polish
     case starter(StarterKind)
+    /// Saved lines, one tap from Home.
+    case saved
+    /// An invented conversation with replies written in advance. No AI call.
+    case example
 }
 
 enum StarterKind: Hashable {
@@ -83,11 +87,15 @@ struct CoachSeed: Equatable {
 @MainActor
 @Observable
 final class AppModel {
+    /// The four tabs. Settings is not a tab: it opens from the profile button.
     enum Tab: Hashable {
+        /// Reply: get help with a message.
         case home
         case coach
-        case library
-        case you
+        /// Set up, test and get the most out of the ReplyRight keyboard.
+        case keyboard
+        /// The people the user saved, with saved lines and conversations.
+        case people
     }
 
     let store: SharedStore
@@ -139,9 +147,24 @@ final class AppModel {
     var inbox: SharedInboxItem?
     var keyboardContext: KeyboardContext?
 
+    // What the app knows about the keyboard. iOS offers no way to ask whether
+    // it is switched on, so this is only ever the most recent evidence.
+    /// Written by the keyboard when it opens with Full Access.
+    var keyboardCheckIn: KeyboardCheckIn?
+    /// The user's own confirmation and the results of in-app tests.
+    var keyboardSetup: KeyboardSetupRecord {
+        didSet { store.saveKeyboardSetup(keyboardSetup) }
+    }
+    /// On-device counts of suggestions shown and used. Never sent anywhere.
+    var activity: ProductActivity
+
     // Navigation and transient UI.
     var selectedTab: Tab = .home
     var homePath: [HomeRoute] = []
+    /// Settings, opened from the profile button on any tab.
+    var showsSettings = false
+    /// The step-by-step keyboard setup, opened from Home or the Keyboard tab.
+    var showsKeyboardSetup = false
     var paywall: PaywallReason?
     var toast: String?
     var coachSeed: CoachSeed?
@@ -167,6 +190,9 @@ final class AppModel {
         self.mode = service.mode
         self.inbox = store.loadInbox()
         self.keyboardContext = store.loadKeyboardContext()
+        self.keyboardCheckIn = store.loadKeyboardCheckIn()
+        self.keyboardSetup = store.loadKeyboardSetup()
+        self.activity = store.loadActivity()
 
         Haptics.isEnabled = loadedSettings.hapticsEnabled
     }
@@ -282,6 +308,8 @@ final class AppModel {
     func reloadSharedState() {
         inbox = store.loadInbox()
         keyboardContext = store.loadKeyboardContext()
+        keyboardCheckIn = store.loadKeyboardCheckIn()
+        activity = store.loadActivity()
     }
 
     func record(_ usage: Usage, mode: GenerationMode) {
@@ -343,14 +371,73 @@ final class AppModel {
         return false
     }
 
+    // MARK: Keyboard status
+
+    /// The keyboard's setup state, from the latest evidence. Never a live reading.
+    var keyboardStatus: KeyboardSetupStatus {
+        KeyboardSetupStatus.derive(checkIn: keyboardCheckIn, record: keyboardSetup)
+    }
+
+    /// The user says they switched the keyboard on. Recorded as their word, not as proof.
+    func confirmKeyboardEnabled() {
+        var record = keyboardSetup
+        record.userConfirmedEnabledAt = Date()
+        keyboardSetup = record
+    }
+
+    /// The keyboard typed its test sentence into ReplyRight's test field.
+    func recordKeyboardTest(_ result: KeyboardHandshake.Result) {
+        var record = keyboardSetup
+        let now = Date()
+        record.lastTestAt = now
+        record.lastTestHadFullAccess = result.hasFullAccess
+        if record.userConfirmedEnabledAt == nil {
+            record.userConfirmedEnabledAt = now
+        }
+        keyboardSetup = record
+        if result.hasFullAccess {
+            Haptics.success()
+        } else {
+            Haptics.warning()
+        }
+    }
+
+    /// "Not now" on the Home keyboard card. It comes back in a week.
+    func snoozeKeyboardCard() {
+        var record = keyboardSetup
+        record.homeCardSnoozedAt = Date()
+        keyboardSetup = record
+    }
+
+    /// Opens the Keyboard tab, and the setup steps if the keyboard isn't working yet.
+    func openKeyboard(startSetup: Bool = false) {
+        selectedTab = .keyboard
+        if startSetup {
+            showsKeyboardSetup = true
+        }
+    }
+
+    // MARK: Activity
+
+    /// Counts a set of suggestions that arrived. Demo samples are not counted,
+    /// because they were not written for this conversation.
+    func noteSuggestionsShown(mode: GenerationMode) {
+        guard mode == .live else { return }
+        activity = store.recordActivity(.suggestionsShown(.app))
+    }
+
     // MARK: Replies
 
     /// Copies a reply to the clipboard. If the user reworked it and has opted in, keeps it as a voice example.
-    func copy(_ text: String, original: String? = nil) {
+    /// `isLiveSuggestion` marks a suggestion written by live AI just now, so copying it counts as using one.
+    func copy(_ text: String, original: String? = nil, isLiveSuggestion: Bool = false) {
         let clean = text.trimmed
         guard !clean.isEmpty else { return }
         UIPasteboard.general.string = clean
         Haptics.success()
+        if isLiveSuggestion {
+            activity = store.recordActivity(.suggestionUsed(.app))
+        }
 
         if settings.learnFromEdits, let original, let sample = VoiceLearning.candidate(original: original, edited: clean) {
             voice.addSample(sample, source: .learned)
@@ -373,7 +460,8 @@ final class AppModel {
         } else {
             savedReplies.insert(SavedReply(text: clean, style: style, intent: intent, crushID: crushID), at: 0)
             Haptics.success()
-            toast = "Saved. It's in your keyboard too."
+            // Only promise the keyboard when it has shown it can read saved lines.
+            toast = keyboardStatus.isReady ? "Saved. It's in your keyboard too." : "Saved to Saved lines."
         }
     }
 
@@ -544,8 +632,13 @@ final class AppModel {
         voice = .standard
         inbox = nil
         keyboardContext = nil
+        keyboardCheckIn = nil
+        keyboardSetup = KeyboardSetupRecord()
+        activity = ProductActivity()
         homePath = []
         coachSeed = nil
+        showsSettings = false
+        showsKeyboardSetup = false
         selectedTab = .home
         settings = AppSettings()
     }
