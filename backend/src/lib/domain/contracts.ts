@@ -201,8 +201,16 @@ export const PRACTICE_SCENARIOS = [
 ] as const;
 export type PracticeScenario = (typeof PRACTICE_SCENARIOS)[number];
 
+/**
+ * How much thought a coaching turn gets. "deep" uses the most capable model
+ * for a hard situation and is part of Pro. Optional; the app does not send it
+ * yet, so every turn is "standard" until a control for it exists.
+ */
+export const COACH_DEPTHS = ["standard", "deep"] as const;
+
 export const coachRequestSchema = z.object({
   mode: z.enum(COACH_MODES).default("ask"),
+  depth: z.enum(COACH_DEPTHS).default("standard"),
   topic: z.enum(COACH_TOPICS).default("general"),
   /**
    * ask: the running chat with the coach, ending on the user's question.
@@ -330,6 +338,10 @@ export type FailureReason =
   | "refusal"
   | "output"
   | "image"
+  /** Development only: the server's AI spend limit is reached, so nothing was sent. */
+  | "budget"
+  /** The caller went away and the server stopped the AI call. */
+  | "cancelled"
   | "unknown";
 
 export interface ApiErrorBody {

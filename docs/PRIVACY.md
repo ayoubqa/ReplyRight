@@ -15,7 +15,11 @@ Nothing is uploaded until the user taps a button that asks for something: Read t
 | A random install id | Every request | Only as a key for today's usage count, in memory |
 | The signed App Store transaction, when subscribed | Every request | Only a short-lived verification cache, keyed by hash |
 
-The backend writes no conversation content to disk or to logs. Its log lines carry the task, the status, the timing, an error kind and a random request id, nothing else (`backend/src/lib/ai/anthropic-provider.ts`, `backend/src/lib/server/pipeline.ts`). The AI provider's own error text is logged only in development, or when `RR_DEBUG_ERRORS` is set; it describes parameters, not conversations. Responses are sent with `Cache-Control: no-store`. The iOS networking layer uses an ephemeral `URLSession` with no cookie store and no disk cache.
+The backend writes no conversation content to disk or to logs. Its log lines carry the task, the status, the timing, an error kind and a random request id, nothing else (`backend/src/lib/ai/anthropic-provider.ts`, `backend/src/lib/server/pipeline.ts`). The AI provider's own error text is logged only in development, or when `RR_DEBUG_ERRORS` is set; it describes parameters, not conversations. Responses are sent with `Cache-Control: no-store`.
+
+Each AI call also writes one usage record: when it ran, which environment, a feature label, which client, the request id, the model, how it ended, how long it took, how many attempts, token counts and an estimated cost. A record never holds a prompt, a conversation, a draft, a reply, a screenshot, a name, the install id, an IP address or a key; it is built from a fixed list of fields, and any text field that is not a short label is replaced (`backend/src/lib/ai/usage-log.ts`, covered by a test that sends a marked message and checks the ledger). Outside production these records are also kept in `backend/.usage/` on the server's disk, which git ignores. The SDK's own debug logging, which could print request bodies, is switched off in code regardless of `ANTHROPIC_LOG`.
+
+To avoid paying twice for one tap, the server briefly remembers a SHA-256 fingerprint of each request that is still running, so an exact repeat from the same install can share its answer. Only the hash is kept, only while the request runs, and requests from different installs never share. The iOS networking layer uses an ephemeral `URLSession` with no cookie store and no disk cache.
 
 Content is processed by the configured AI provider (Anthropic) under its API terms.
 
@@ -82,7 +86,7 @@ Enforced in the prompts (`backend/src/lib/ai/prompts/principles.ts`) and checked
 
 ## Credentials and verification
 
-- The Anthropic API key exists only in the backend's environment. Nothing in `ios/` contains or needs one.
+- The Anthropic API keys exist only in the backend's environment. Nothing in `ios/` contains or needs one. Production and development use separate keys (`ANTHROPIC_API_KEY`, `ANTHROPIC_API_KEY_DEV`); a development server or eval run never uses the production key, and neither key is ever logged.
 - Subscription status is never taken on the client's word. The server verifies the App Store's signature chain itself.
 - The install id is a random UUID, not derived from the device or the Apple Account. It is stored in the keychain so limits survive a reinstall.
 

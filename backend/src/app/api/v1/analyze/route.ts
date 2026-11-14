@@ -22,6 +22,6 @@ export async function POST(request: Request) {
       if (input.conversation && input.conversation.length < 2) return "Paste a little more of the conversation.";
       return null;
     },
-    run: ({ input, images, provider }) => provider.analyze({ request: input, images }),
+    run: ({ input, images, provider, call }) => provider.analyze({ request: input, images, call }),
   });
 }

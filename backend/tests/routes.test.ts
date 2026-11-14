@@ -284,7 +284,17 @@ describe("GET /api/v1/status", () => {
     const res = await status(new Request("http://test/api/v1/status", { headers: headers() }));
     const body = await res.json();
     expect(body).toMatchObject({ apiVersion: 2, mode: "demo", provider: "demo", environment: "development" });
-    expect(body.ai).toEqual({ state: "untested", lastSuccessAt: null, lastFailureAt: null, lastFailureReason: null, models: null });
+    expect(body.ai).toEqual({
+      state: "untested",
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      lastFailureReason: null,
+      models: null,
+      // Which model each route uses; null in demo mode.
+      routes: null,
+      // Development only: the AI spend limit and how much of it is used.
+      spend: expect.objectContaining({ active: true, limitUsd: 5, period: "day", state: "ok" }),
+    });
     expect(body.plans.free.intents).toContain("boundary");
     expect(body.plans.free.intents).not.toContain("ask_out");
     expect(body.plans.pro.intents).toHaveLength(12);
@@ -292,6 +302,13 @@ describe("GET /api/v1/status", () => {
     expect(body.refineActions).toEqual(expect.arrayContaining(["more_direct", "ask_question", "keep_going"]));
     expect(body.coach.modes).toEqual(["ask", "review", "practice"]);
     expect(JSON.stringify(body)).not.toMatch(/sk-ant|api[_-]?key/i);
+  });
+
+  it("reports no spend limit in production; the only new field there is the route table", async () => {
+    process.env.RR_ENVIRONMENT = "production";
+    const body = await (await status(new Request("http://test/api/v1/status", { headers: headers() }))).json();
+    expect(body.environment).toBe("production");
+    expect(Object.keys(body.ai).sort()).toEqual(["lastFailureAt", "lastFailureReason", "lastSuccessAt", "models", "routes", "state"]);
   });
 
   it("names the deployment and reflects recent AI health", async () => {

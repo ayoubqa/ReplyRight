@@ -1,5 +1,5 @@
 import { coachRequestSchema, type CoachResult } from "@/lib/domain/contracts";
-import { handleTask } from "@/lib/server/pipeline";
+import { handleTask, UpgradeRequired } from "@/lib/server/pipeline";
 
 export const maxDuration = 120;
 
@@ -28,7 +28,13 @@ export async function POST(request: Request) {
           return !last || last.role === "user" ? null : "Send your next message to keep practising.";
       }
     },
-    run: ({ input, plan, provider }) =>
-      provider.coach({ request: input, options: { includeSamples: plan.voiceSamples } }),
+    // Deep coaching runs on the most capable model, so it is part of Pro.
+    gate: ({ input, tier }) => {
+      if (input.depth === "deep" && tier !== "pro") {
+        throw new UpgradeRequired("Deeper coaching is part of ReplyRight Pro.");
+      }
+    },
+    run: ({ input, plan, provider, call }) =>
+      provider.coach({ request: input, options: { includeSamples: plan.voiceSamples }, call }),
   });
 }

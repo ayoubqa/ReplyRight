@@ -103,6 +103,8 @@ public enum ServerFailure {
             return "The AI provider is limiting requests. Try again shortly."
         case "not_configured":
             return "The server has no AI key, so it only returns samples."
+        case "budget":
+            return "The server's development AI spend limit is reached, so it isn't sending requests to the AI provider. It resets by itself, or raise RR_DEV_SPEND_LIMIT_USD."
         case "image":
             return "The AI provider could not use one of the screenshots. The server checks every image first, so this points at an unusual file."
         default:

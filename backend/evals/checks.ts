@@ -1,4 +1,5 @@
-import type { Expectations } from "./cases";
+import type { Analysis, CoachRequest, CoachResult } from "@/lib/domain/contracts";
+import type { CoachExpectations, Expectations, ReadExpectations } from "./cases";
 
 /**
  * Deterministic, atomic checks. Each returns pass/fail for one property so a
@@ -70,5 +71,53 @@ export function runChecks(output: Output, expect: Expectations): CheckResults {
   if (expect.language === "es") results.language = texts.every((t) => SPANISH_MARKERS.test(t));
   if (expect.language === "en") results.language = texts.every((t) => ENGLISH_MARKERS.test(t) || !SPANISH_MARKERS.test(t));
   if (expect.headsUp) results.heads_up = Boolean(output.headsUp && output.headsUp.trim().length > 10);
+  return results;
+}
+
+// ---------------------------------------------------------------- reading a conversation
+
+
+const norm = (text: string) => text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+
+/** Transcription and judgement checks for a read. Exact, because the fixtures' text is known. */
+export function runReadChecks(analysis: Analysis, expect: ReadExpectations): CheckResults {
+  const results: CheckResults = {};
+  results.can_reply = analysis.canReply === expect.canReply;
+  if (expect.problemIn) results.problem = expect.problemIn.includes(analysis.problem);
+  results.has_read = analysis.read.trim().length > 0;
+  if (expect.lines) {
+    const transcript = analysis.transcript.map((line) => ({ speaker: line.speaker, text: norm(line.text) }));
+    const found = expect.lines.map((want) => transcript.findIndex((line) => line.text.includes(norm(want.text))));
+    results.transcribed = found.every((index) => index >= 0);
+    results.speakers = expect.lines.every((want, i) => found[i] >= 0 && transcript[found[i]].speaker === want.speaker);
+    results.order = found.every((index, i) => i === 0 || index > found[i - 1]);
+    // Nothing invented: no more lines than the conversation has, give or take one split message.
+    results.no_extra_lines = analysis.transcript.length <= expect.lines.length + 2;
+  }
+  if (expect.latestIncludes) results.latest = norm(analysis.latestMessage ?? "").includes(norm(expect.latestIncludes));
+  return results;
+}
+
+// ---------------------------------------------------------------- coaching
+
+export function runCoachChecks(result: CoachResult, request: CoachRequest, expect: CoachExpectations): CheckResults {
+  const results: CheckResults = {};
+  results.message = result.message.trim().length > 20;
+  results.suggestions_max_3 = result.suggestions.length <= 3;
+  results.follow_ups_max_3 = result.followUps.length <= 3;
+  results.no_em_dash = !result.message.includes("—");
+  if (expect.review) {
+    results.review = result.review !== null;
+    results.review_complete =
+      result.review !== null && result.review.checks.length >= 4 && result.review.alternative.trim().length > 0 && result.review.improvements.length <= 3;
+  }
+  if (expect.practice || request.mode === "practice") results.practice = result.practice !== null;
+  if (expect.partnerReply) results.partner_reply = Boolean(result.practice?.partnerReply?.trim());
+  if (request.mode === "practice" && request.messages.length > 0) results.feedback = Boolean(result.practice?.feedback?.trim());
+  if (expect.headsUp) results.heads_up = Boolean(result.headsUp && result.headsUp.trim().length > 10);
+  if (expect.forbidden) {
+    const text = norm(`${result.message} ${result.review?.comesAcross ?? ""}`);
+    results.no_mind_reading = expect.forbidden.every((phrase) => !text.includes(phrase));
+  }
   return results;
 }

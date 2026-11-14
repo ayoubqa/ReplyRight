@@ -28,7 +28,7 @@ The backend is built, run and tested where this was written. **The iOS code is w
 
 | Part | State |
 | --- | --- |
-| Backend API | Type-checked, linted, production build passes, 109 automated tests pass, every request shape the app sends exercised over HTTP in demo mode (`npm run verify`, 21 checks including real screenshot fixtures) |
+| Backend API | Type-checked, linted, production build passes, 214 automated tests pass, every request shape the app sends exercised over HTTP in demo mode (`npm run verify`, 21 checks including real screenshot fixtures) |
 | Live AI output | **Not exercised.** No Anthropic API key was available. `docs/VERIFICATION.md` step 3 is the check to run |
 | Model comparison eval | Harness written, graders unit-tested, dry-run only. **Not run against live models** |
 | Swift sources (59 files, about 18,300 lines) | The first Xcode 16.2 build of this revision failed in `Tone.swift` (three `RefineAction` cases had been copied into `Tone` by a scripted edit). That is fixed, and the text-level checks now also verify `switch` labels and exhaustiveness. **Not yet compiled again after the fix** |
@@ -44,7 +44,7 @@ Tap the pill in the top right corner of Home. The **Connection** screen says whi
 
 1. **The server is not running.** `cd backend && npm run dev`. The app's Debug build talks to `http://localhost:3000`.
 2. **The server started on another port.** If the terminal says `http://localhost:3001`, type that address in Connection.
-3. **The server has no AI key.** The app works, and every answer is labelled a demo sample. Add `ANTHROPIC_API_KEY` to `backend/.env.local` and restart.
+3. **The server has no AI key.** The app works, and every answer is labelled a demo sample. For local development add `ANTHROPIC_API_KEY_DEV` (a development key, not the production one) to `backend/.env.local` and restart. A development server never uses `ANTHROPIC_API_KEY`.
 4. **The key or model is wrong.** Connection says "AI isn't answering" and names the cause. `npm run verify:live` in `backend/` shows the same thing from the terminal.
 5. **A real iPhone cannot reach `localhost`.** Use your Mac's network name; see section 4.
 
@@ -61,7 +61,7 @@ Tap the pill in the top right corner of Home. The **Connection** screen says whi
 ```bash
 cd backend
 npm install
-cp .env.example .env.local      # optional: add ANTHROPIC_API_KEY for real replies
+cp .env.example .env.local      # optional: add ANTHROPIC_API_KEY_DEV for real replies
 npm run dev                     # http://localhost:3000
 ```
 
@@ -81,7 +81,7 @@ npm run verify           # every request shape the app sends; works in demo mode
 npm run verify:live      # the same, plus one real AI call; fails unless AI is live
 ```
 
-Other commands: `npm test` (109 tests), `npm run typecheck`, `npm run lint`, `npm run build`.
+Other commands: `npm test` (214 tests), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run usage` (AI calls and estimated spend from the local ledger).
 
 While it runs, the server prints one line per request (task, status, timing, a request id). It never prints a conversation, a draft, a screenshot or a key.
 
@@ -91,10 +91,16 @@ All of these stay on the server. Full comments are in `backend/.env.example`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | none | Enables real AI. Without it the API returns labelled samples (`"mode": "demo"`) |
+| `ANTHROPIC_API_KEY` | none | **Production key.** Used only when the server runs as production. Without a key the API returns labelled samples (`"mode": "demo"`) |
+| `ANTHROPIC_API_KEY_DEV` | none | **Development key.** Used by `npm run dev`, staging and evals. Development never falls back to the production key |
+| `RR_DEV_SPEND_LIMIT_USD` / `RR_DEV_SPEND_PERIOD` | 5 / day | Development spend limit, with warnings at 50, 75 and 90% and a hard stop. Not applied in production |
+| `RR_USAGE_LOG_DIR` | `backend/.usage` outside production | Usage ledger: one line per AI call with tokens and estimated cost, never content. `npm run usage` summarises it |
+| `AI_MAX_RETRIES` | 1 | Extra attempts after a recoverable AI failure. Timeouts are never retried |
 | `AI_PROVIDER` | inferred | `anthropic` or `demo` |
-| `AI_MODEL` | `claude-opus-5-5` | Model for every task |
-| `AI_MODEL_ANALYZE`, `_REPLIES`, `_REFINE`, `_COACH` | `AI_MODEL` | Per-task model overrides |
+| `AI_ROUTE_<ROUTE>` | see `docs/COST-CONTROLS.md` | Model, effort and thinking for one route (Haiku 5.5, Sonnet 5.5 or Opus 5.5 by default, per kind of request) |
+| `AI_ROUTING` | on | `off` puts every route back on `claude-opus-5-5`, as before routing |
+| `AI_MODEL` | routing defaults | One model for every route |
+| `AI_MODEL_ANALYZE`, `_REPLIES`, `_REFINE`, `_COACH` | routing defaults | One model for every route of a task |
 | `AI_EFFORT`, `AI_EFFORT_<TASK>` | analyze low, replies medium, refine low, coach medium | Reasoning effort |
 | `FREE_DAILY_GENERATIONS` / `FREE_DAILY_COACH_MESSAGES` | 10 / 3 | Free plan daily limits |
 | `PRO_DAILY_GENERATIONS` / `PRO_DAILY_COACH_MESSAGES` | 400 / 200 | Pro fair-use ceilings |
@@ -205,7 +211,7 @@ How entitlement works: the app derives Pro from transactions StoreKit has verifi
 ## 7. Run the tests
 
 ```bash
-# Backend: 109 tests, no network needed
+# Backend: 214 tests, no network needed
 cd backend && npm test
 
 # Everything the app sends, against a running server
@@ -228,7 +234,7 @@ python3 ios/scripts/check_xcodeproj.py           # project file structure
 
 ## 8. Prepare an App Store release
 
-1. **Deploy the backend** over HTTPS and set `RR_API_PROD_HOST` in `ios/Config/Shared.xcconfig`. On the server set `ANTHROPIC_API_KEY`, `APPLE_BUNDLE_ID`, `PRO_PRODUCT_IDS` and `RR_ENVIRONMENT=production`. Leave `ENTITLEMENT_TRUST_XCODE` off and `DIAGNOSTICS_TOKEN` empty unless you need the probe. Run `npm run verify:live -- https://your-domain` against it before shipping. Any Node host works; AI requests can take up to two minutes, so check the host's request time limit and its request body limit (four screenshots can reach 16 MB).
+1. **Deploy the backend** over HTTPS and set `RR_API_PROD_HOST` in `ios/Config/Shared.xcconfig`. On the server set `ANTHROPIC_API_KEY` (the production key, with a monthly spend limit in the Anthropic Console), `APPLE_BUNDLE_ID`, `PRO_PRODUCT_IDS` and `RR_ENVIRONMENT=production`. Do not set `ANTHROPIC_API_KEY_DEV` there. Leave `ENTITLEMENT_TRUST_XCODE` off and `DIAGNOSTICS_TOKEN` empty unless you need the probe. Run `npm run verify:live -- https://your-domain` against it before shipping. Any Node host works; AI requests can take up to two minutes, so check the host's request time limit and its request body limit (four screenshots can reach 16 MB).
 2. **Replace the in-memory stores** before running more than one server instance. The rate limiter and daily usage counters are per process (`backend/src/lib/server/rate-limit.ts`, `usage.ts`); both have an interface ready for a shared store.
 3. **Create the products** in App Store Connect with the identifiers above, in one subscription group, with the yearly plan ranked above the monthly one.
 4. **Legal pages.** `backend/src/app/privacy`, `terms` and `support` describe how the software behaves. They are drafts and say so. Have them reviewed by a lawyer, add your company details, and set the support email.

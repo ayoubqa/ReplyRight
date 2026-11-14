@@ -27,7 +27,7 @@ export async function POST(request: Request) {
         throw new UpgradeRequired(`"${INTENT_DEFINITIONS[input.intent].label}" is part of ReplyRight Pro.`);
       }
     },
-    run: ({ input, images, plan, provider }) =>
-      provider.replies({ request: input, images, options: { includeSamples: plan.voiceSamples } }),
+    run: ({ input, images, plan, provider, call }) =>
+      provider.replies({ request: input, images, options: { includeSamples: plan.voiceSamples }, call }),
   });
 }

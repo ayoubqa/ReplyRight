@@ -376,6 +376,17 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(transport.requests.count, 2)
     }
 
+    func testNoAutomaticRetryWhenTheServerSaysARepeatCouldCostAnotherAICall() async {
+        let transport = MockTransport([
+            .response(status: 502, body: errorBody("ai_bad_output", message: "Garbled."), headers: ["X-RR-Retry": "no"]),
+            .response(status: 200, body: repliesBody),
+        ])
+        await assertThrows(.unavailable(message: "Garbled.")) {
+            _ = try await self.makeClient(transport, maxRetries: 1).replies(RepliesRequest(conversation: "hi"))
+        }
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     func testRetriesStopAtTheLimit() async {
         let transport = MockTransport([
             .response(status: 503, body: errorBody("ai_unavailable", message: "Busy.")),

@@ -336,11 +336,19 @@ public final class APIClient: @unchecked Sendable {
 
     // MARK: Sending
 
+    /// Thrown inside the client when the server says an automatic repeat could
+    /// pay for a second AI call. The caller receives the wrapped error unchanged.
+    private struct ServerSaysDoNotRetry: Error {
+        let error: APIError
+    }
+
     private func perform<Response: Decodable>(_ request: URLRequest, endpoint: String, images: Int) async throws -> Response {
         var attempt = 0
         while true {
             do {
                 return try await performOnce(request, endpoint: endpoint, images: images)
+            } catch let stop as ServerSaysDoNotRetry {
+                throw stop.error
             } catch let error as APIError {
                 guard error.isTransient, attempt < configuration.maxRetries else { throw error }
                 attempt += 1
@@ -411,6 +419,13 @@ public final class APIClient: @unchecked Sendable {
                 record.outcome = "http_\(response.statusCode)"
             }
             finish(failure)
+            // The server sends this after a failure that may already have been
+            // billed (unusable output, a timeout, its spend limit). It has made
+            // its own safe retries, so the app does not repeat the request by
+            // itself. The person can still tap Try again.
+            if response.value(forHTTPHeaderField: "X-RR-Retry")?.lowercased() == "no" {
+                throw ServerSaysDoNotRetry(error: failure)
+            }
             throw failure
         }
         do {

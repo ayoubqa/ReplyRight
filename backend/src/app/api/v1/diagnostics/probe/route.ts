@@ -65,6 +65,7 @@ export async function POST(request: Request) {
         locale: "en",
       },
       options: { includeSamples: false },
+      call: { feature: "diagnostics_probe", route: "refine", client: "diagnostics", signal: request.signal },
     });
     ok = result.options.length > 0;
     if (!ok) reason = "output";

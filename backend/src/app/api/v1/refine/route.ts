@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     task: "refine",
     schema: refineRequestSchema,
     meter: "generation",
-    run: ({ input, plan, provider }) =>
-      provider.refine({ request: input, options: { includeSamples: plan.voiceSamples } }),
+    run: ({ input, plan, provider, call }) =>
+      provider.refine({ request: input, options: { includeSamples: plan.voiceSamples }, call }),
   });
 }

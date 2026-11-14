@@ -1,7 +1,9 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { getProvider, ProviderError, type AiProvider, type AiTask } from "@/lib/ai";
-import type { TransientImage } from "@/lib/ai/types";
+import { describeCall } from "@/lib/ai/router";
+import type { CallContext, TransientImage } from "@/lib/ai/types";
 import type {
   ApiErrorBody,
   ApiErrorCode,
@@ -18,6 +20,15 @@ import { consumeUsage, refundUsage, usageSnapshot, usageSubject, type Meter } fr
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
+/**
+ * Server failures after which an automatic retry is cheap: the provider was
+ * busy or could not be reached, so nothing was billed. After any other server
+ * failure (unusable output, a timeout, the spend limit, a setup problem) the
+ * response says `X-RR-Retry: no`, and the app does not repeat the request on
+ * its own. The server has already made its own, limited retries by then.
+ */
+const CHEAP_TO_RETRY = new Set<FailureReason>(["overloaded", "network"]);
+
 export function errorResponse(
   status: number,
   code: ApiErrorCode,
@@ -32,7 +43,10 @@ export function errorResponse(
       ...(extra?.reason && extra.reason !== "unknown" ? { reason: extra.reason } : {}),
     },
   };
-  return Response.json(body, { status, headers: { ...NO_STORE, ...extra?.headers } });
+  const headers = new Headers(NO_STORE);
+  if (status >= 500 && !(extra?.reason && CHEAP_TO_RETRY.has(extra.reason))) headers.set("X-RR-Retry", "no");
+  new Headers(extra?.headers).forEach((value, name) => headers.set(name, value));
+  return Response.json(body, { status, headers });
 }
 
 /**
@@ -55,6 +69,12 @@ function clientLabel(request: Request): string {
   return /^[a-z0-9-]{1,24}\/[0-9A-Za-z.]{1,16}$/.test(value) ? value : "other";
 }
 
+/** Which part of the app asked, for the usage ledger: app, keyboard, share or other. */
+export function clientKind(request: Request): string {
+  const match = /^ios-(app|keyboard|share)\//.exec(request.headers.get("x-rr-client") ?? "");
+  return match ? match[1] : "other";
+}
+
 /** A plan restriction: the request is valid but needs Pro. */
 export class UpgradeRequired extends Error {}
 
@@ -64,6 +84,8 @@ export interface TaskContext<Input> {
   tier: Tier;
   plan: Plan;
   provider: AiProvider;
+  /** Pass to the provider: the feature label, request id and a signal that fires when every caller has gone. */
+  call: CallContext;
 }
 
 interface TaskConfig<Schema extends z.ZodType, Result> {
@@ -111,10 +133,10 @@ export async function handleTask<Schema extends z.ZodType, Result>(
 ): Promise<Response> {
   const requestId = crypto.randomUUID();
   const started = Date.now();
-  const outcome: Outcome = { mode: null, images: 0, code: null, reason: null };
+  const outcome: Outcome = { mode: null, images: 0, code: null, reason: null, joined: null };
   let response: Response;
   try {
-    response = await runTask(request, config, outcome);
+    response = await runTask(request, config, outcome, requestId);
   } catch (error) {
     console.error(`[replyright] Unhandled error in ${config.task}:`, error instanceof Error ? error.name : "unknown");
     outcome.code = "internal";
@@ -132,6 +154,8 @@ export async function handleTask<Schema extends z.ZodType, Result>(
     reason: outcome.reason,
     client: clientLabel(request),
     req: requestId,
+    // Set when this request was an exact repeat of one still running, and shared its answer.
+    joined: outcome.joined,
   });
   return response;
 }
@@ -141,12 +165,99 @@ interface Outcome {
   images: number;
   code: ApiErrorCode | null;
   reason: FailureReason | null;
+  joined: string | null;
+}
+
+// ---------------------------------------------------------------- duplicates and cancellation
+
+/**
+ * Requests still being answered, by a fingerprint of everything that decides
+ * the answer: the task, who is asking, their plan, the validated request and
+ * the screenshots. An exact repeat from the same install (a double tap, a
+ * retry while the first is still running) waits for the same answer instead
+ * of paying for a second AI call, and is not counted against the daily limit
+ * twice. Requests from different installs never share.
+ *
+ * Only the fingerprint (a SHA-256 hash) is kept, and only while the request
+ * runs. Nothing is cached after the answer is sent.
+ */
+interface Callers {
+  controller: AbortController;
+  waiters: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+interface Flight extends Callers {
+  requestId: string;
+  result: Promise<Snapshot>;
+}
+
+interface Snapshot {
+  status: number;
+  headers: [string, string][];
+  body: string;
+}
+
+const flights = new Map<string, Flight>();
+
+function dedupeEnabled(): boolean {
+  return process.env.RR_DEDUPE_REQUESTS?.trim().toLowerCase() !== "off";
+}
+
+/**
+ * How long a call keeps running after every caller has gone. A repeat that
+ * arrives within this window (an app that cancelled and asked again) picks up
+ * the same answer. After it, the AI call is stopped.
+ */
+function abortGraceMs(): number {
+  const raw = process.env.RR_ABORT_GRACE_MS?.trim();
+  const value = raw ? Number(raw) : NaN;
+  return Number.isFinite(value) && value >= 0 ? value : 1_000;
+}
+
+function fingerprint(parts: { task: string; subject: string; tier: Tier; input: unknown; images: TransientImage[] }): string {
+  const hash = createHash("sha256");
+  hash.update(`${parts.task}\n${parts.subject}\n${parts.tier}\n`);
+  hash.update(JSON.stringify(parts.input) ?? "");
+  for (const image of parts.images) {
+    hash.update(`\n${image.mediaType}:${image.base64.length}:`);
+    hash.update(image.base64);
+  }
+  return hash.digest("hex");
+}
+
+/** Counts this caller in, and lets the call go once every caller has left and the grace period passes. */
+function attach(flight: Callers, signal: AbortSignal) {
+  flight.waiters += 1;
+  if (flight.timer) {
+    clearTimeout(flight.timer);
+    flight.timer = null;
+  }
+  const leave = () => {
+    flight.waiters -= 1;
+    if (flight.waiters > 0 || flight.timer) return;
+    flight.timer = setTimeout(() => {
+      flight.timer = null;
+      if (flight.waiters <= 0) flight.controller.abort();
+    }, abortGraceMs());
+  };
+  if (signal.aborted) leave();
+  else signal.addEventListener("abort", leave, { once: true });
+}
+
+async function snapshot(response: Response): Promise<Snapshot> {
+  return { status: response.status, headers: [...response.headers.entries()], body: await response.text() };
+}
+
+function fromSnapshot(snap: Snapshot): Response {
+  return new Response(snap.body, { status: snap.status, headers: snap.headers });
 }
 
 async function runTask<Schema extends z.ZodType, Result>(
   request: Request,
   config: TaskConfig<Schema, Result>,
   outcome: Outcome,
+  requestId: string,
 ): Promise<Response> {
   const fail = (...args: Parameters<typeof errorResponse>) => {
     outcome.code = args[1];
@@ -199,7 +310,17 @@ async function runTask<Schema extends z.ZodType, Result>(
   const tier = resolveTier(request);
   const plan = getPlans()[tier];
   const subject = usageSubject(request);
-  const context: TaskContext<z.infer<Schema>> = { input, images, tier, plan, provider };
+  const controller = new AbortController();
+  // The ModelRouter decides which route (model policy) serves this request.
+  const { feature, route } = describeCall(config.task, input, images);
+  const call: CallContext = {
+    feature,
+    route,
+    requestId,
+    client: clientKind(request),
+    signal: controller.signal,
+  };
+  const context: TaskContext<z.infer<Schema>> = { input, images, tier, plan, provider, call };
 
   try {
     config.gate?.(context);
@@ -210,6 +331,43 @@ async function runTask<Schema extends z.ZodType, Result>(
     throw error;
   }
 
+  if (!dedupeEnabled()) {
+    attach({ controller, waiters: 0, timer: null }, request.signal);
+    return execute(config, context, subject, fail);
+  }
+
+  const key = fingerprint({ task: config.task, subject, tier, input, images });
+  const running = flights.get(key);
+  if (running) {
+    outcome.joined = running.requestId;
+    attach(running, request.signal);
+    return fromSnapshot(await running.result);
+  }
+  const flight: Flight = {
+    requestId,
+    controller,
+    waiters: 0,
+    timer: null,
+    result: execute(config, context, subject, fail).then(snapshot),
+  };
+  flights.set(key, flight);
+  attach(flight, request.signal);
+  try {
+    return fromSnapshot(await flight.result);
+  } finally {
+    flights.delete(key);
+    if (flight.timer) clearTimeout(flight.timer);
+  }
+}
+
+/** Meters, calls the provider and builds the response. Runs once per distinct request. */
+async function execute<Schema extends z.ZodType, Result>(
+  config: TaskConfig<Schema, Result>,
+  context: TaskContext<z.infer<Schema>>,
+  subject: string,
+  fail: (...args: Parameters<typeof errorResponse>) => Response,
+): Promise<Response> {
+  const { tier, provider } = context;
   let usage = usageSnapshot(subject, tier);
   if (config.meter) {
     const reserved = consumeUsage(subject, tier, config.meter);
@@ -230,7 +388,8 @@ async function runTask<Schema extends z.ZodType, Result>(
     const envelope: Envelope<Result> = {
       mode: provider.mode,
       provider: provider.id,
-      model: provider.modelFor(config.task),
+      // The model that actually answered this request (null in demo mode).
+      model: context.call.servedModel ?? provider.modelFor(config.task),
       usage,
       result,
     };

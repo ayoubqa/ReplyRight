@@ -329,10 +329,19 @@ console.log(`Result             : ${results.length - failed.length} of ${results
 if (results.some((r) => /code=rate_limited/.test(r.detail))) {
   console.log("\nSome requests were rate limited. The server allows RATE_LIMIT_PER_MINUTE requests a minute per address (30 by default); wait a minute and run again.");
 }
+if (status.ai?.spend?.active) {
+  const s = status.ai.spend;
+  console.log(`Development spend  : $${s.spentUsd.toFixed(4)} of $${s.limitUsd.toFixed(2)} this ${s.period} (${s.state})`);
+}
 if (mode !== "live") {
-  console.log("\nThis server is in DEMO MODE: it has no ANTHROPIC_API_KEY, so every answer above is a labelled sample.");
+  // Production uses ANTHROPIC_API_KEY; every other environment uses ANTHROPIC_API_KEY_DEV.
+  const keyVar = status.environment === "production" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_API_KEY_DEV";
+  console.log(`\nThis server is in DEMO MODE: it has no ${keyVar}, so every answer above is a labelled sample.`);
   console.log("The request and response formats are verified. Live AI is NOT verified by this run.");
-  console.log("To verify live AI: put ANTHROPIC_API_KEY in backend/.env.local, restart the server, and run this again with --require-live.");
+  console.log(`To verify live AI: put ${keyVar} in backend/.env.local, restart the server, and run this again with --require-live.`);
+  if (status.environment !== "production") {
+    console.log("A development server never uses ANTHROPIC_API_KEY, the production key. The server log says which variable it read.");
+  }
 }
 if (failed.length === 0 && mode === "live") {
   console.log("\nLive AI answered every request in the shapes the app expects.");

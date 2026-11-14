@@ -12,6 +12,7 @@ import type {
   RepliesRequest,
   RepliesResult,
 } from "@/lib/domain/contracts";
+import type { RouteKey } from "./router";
 
 /**
  * A screenshot held in memory for the duration of a single request. Never
@@ -34,6 +35,24 @@ export interface TaskOptions {
 }
 
 /**
+ * Bookkeeping for one AI call. None of it reaches the model.
+ */
+export interface CallContext {
+  /** What the call is for, as recorded in the usage ledger. Defaults to the task name. */
+  feature?: string;
+  /** The server's request id, so a usage record can be matched to the request log line. */
+  requestId?: string;
+  /** Which client asked: app, keyboard, share, diagnostics or other. */
+  client?: string;
+  /** Which route (model policy) serves the call. Defaults to the task's main route. */
+  route?: RouteKey;
+  /** Set by the provider: the model that actually answered. */
+  servedModel?: string;
+  /** Stops the call, for example when the app that asked for it has gone away. */
+  signal?: AbortSignal;
+}
+
+/**
  * Provider abstraction for a multimodal LLM. Add a provider by implementing
  * this interface and registering it in `./index.ts`. Routes and clients do not
  * change.
@@ -43,10 +62,15 @@ export interface AiProvider {
   readonly mode: GenerationMode;
   readonly supportsImages: boolean;
   modelFor(task: AiTask): string | null;
-  analyze(input: { request: AnalyzeRequest; images: TransientImage[] }): Promise<Analysis>;
-  replies(input: { request: RepliesRequest; images: TransientImage[]; options: TaskOptions }): Promise<RepliesResult>;
-  refine(input: { request: RefineRequest; options: TaskOptions }): Promise<RefineResult>;
-  coach(input: { request: CoachRequest; options: TaskOptions }): Promise<CoachResult>;
+  analyze(input: { request: AnalyzeRequest; images: TransientImage[]; call?: CallContext }): Promise<Analysis>;
+  replies(input: {
+    request: RepliesRequest;
+    images: TransientImage[];
+    options: TaskOptions;
+    call?: CallContext;
+  }): Promise<RepliesResult>;
+  refine(input: { request: RefineRequest; options: TaskOptions; call?: CallContext }): Promise<RefineResult>;
+  coach(input: { request: CoachRequest; options: TaskOptions; call?: CallContext }): Promise<CoachResult>;
 }
 
 export class ProviderError extends Error {

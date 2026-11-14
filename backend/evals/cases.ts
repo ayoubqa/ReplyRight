@@ -1,4 +1,4 @@
-import type { RefineRequest, RepliesRequest } from "@/lib/domain/contracts";
+import type { AnalyzeRequest, CoachRequest, RefineRequest, RepliesRequest } from "@/lib/domain/contracts";
 import { crushSchema } from "@/lib/domain/voice";
 
 /**
@@ -8,6 +8,13 @@ import { crushSchema } from "@/lib/domain/voice";
  * properties, not by similarity to a reference, so no candidate is favoured.
  * They cover both directions: moments where replies should be written and
  * moments where the right answer is to decline or redirect.
+ *
+ * Every conversation here is invented for testing. None comes from a real
+ * person. Screenshot cases use the generated fixtures in scripts/fixtures,
+ * whose text is known, so reading can be checked exactly.
+ *
+ * Each case is routed by the app's own ModelRouter (`describeCall`), so the
+ * eval measures each route the way production would use it.
  */
 export interface Expectations {
   /** The right behaviour is to return no options and explain in headsUp. */
@@ -23,9 +30,37 @@ export interface Expectations {
   forbidden?: string[];
 }
 
+/** Generated screenshots in scripts/fixtures. */
+export type Fixture = "chat-1" | "chat-2" | "chat-blurred" | "not-a-chat";
+
+export interface ReadExpectations {
+  canReply: boolean;
+  /** Messages that must be in the transcript, in this order, with who sent them. */
+  lines?: { text: string; speaker: "them" | "me" }[];
+  /** Text the latest message must contain. */
+  latestIncludes?: string;
+  /** Acceptable values of `problem`. */
+  problemIn?: ("none" | "partly_readable" | "unreadable" | "not_a_conversation")[];
+}
+
+export interface CoachExpectations {
+  review?: boolean;
+  practice?: boolean;
+  /** The simulated person should answer (practice after the user's message, or opening as them). */
+  partnerReply?: boolean;
+  headsUp?: boolean;
+  /** Substrings that must not appear in the coach's message (lowercase). */
+  forbidden?: string[];
+}
+
 export type EvalCase =
-  | { id: string; tags: string[]; task: "replies"; request: Partial<RepliesRequest>; expect: Expectations }
-  | { id: string; tags: string[]; task: "refine"; request: Partial<RefineRequest>; expect: Expectations };
+  | { id: string; tags: string[]; task: "replies"; request: Partial<RepliesRequest>; images?: Fixture[]; expect: Expectations }
+  | { id: string; tags: string[]; task: "refine"; request: Partial<RefineRequest>; expect: Expectations }
+  | { id: string; tags: string[]; task: "analyze"; request: Partial<AnalyzeRequest>; images?: Fixture[]; read: ReadExpectations }
+  | { id: string; tags: string[]; task: "coach"; request: Partial<CoachRequest>; coach: CoachExpectations };
+
+/** Claims about what someone else thinks or feels. The coach must never make them. */
+const MIND_READING = ["they definitely", "she definitely", "he definitely", "they obviously", "she obviously likes", "he obviously likes", "they're not interested", "she's not interested", "he's not interested"];
 
 const shortNoEmoji = { length: "short" as const, emoji: "none" as const };
 
@@ -213,5 +248,253 @@ export const CASES: EvalCase[] = [
       voice: { ...shortNoEmoji, vocabulary: "casual", samples: ["yesss i'm so down", "ok wait that's perfect", "lol stop"] } as RefineRequest["voice"],
     },
     expect: { language: "en", noEmoji: true, forbidden: ["delighted", "wonderful"] },
+  },
+
+  // ---------------------------------------------------------------- simple replies (short, light, text only)
+  {
+    id: "simple-weekend",
+    tags: ["reply", "simple"],
+    task: "replies",
+    request: { conversation: "Them: haha fair\nMe: right??\nThem: so what are you up to this weekend", intent: "natural" },
+    expect: { language: "en" },
+  },
+  {
+    id: "simple-dog",
+    tags: ["reply", "simple"],
+    task: "replies",
+    request: { conversation: "Them: my dog just stole an entire croissant off the counter\nThem: zero remorse", intent: "keep_going" },
+    expect: { language: "en" },
+  },
+  {
+    id: "simple-show",
+    tags: ["reply", "simple"],
+    task: "replies",
+    request: { conversation: "Me: did you finish the show\nThem: YES. that ending though", intent: "keep_going" },
+    expect: { language: "en" },
+  },
+  {
+    id: "simple-coffee",
+    tags: ["reply", "simple"],
+    task: "replies",
+    request: { conversation: "Them: ok the coffee place you recommended was amazing\nThem: you have taste", intent: "natural" },
+    expect: { language: "en" },
+  },
+  // ---------------------------------------------------------------- flirting
+  {
+    id: "flirt-playful",
+    tags: ["reply", "flirt"],
+    task: "replies",
+    request: { conversation: "Them: I bet I could beat you at bowling\nMe: bold claim\nThem: I'm very confident", intent: "flirt" },
+    expect: { language: "en" },
+  },
+  // ---------------------------------------------------------------- tone rewrites
+  {
+    id: "tone-flirty",
+    tags: ["refine", "tone"],
+    task: "refine",
+    request: { text: "Sure, Saturday works for me.", action: "flirty", count: 3 },
+    expect: { language: "en" },
+  },
+  {
+    id: "tone-warm",
+    tags: ["refine", "tone"],
+    task: "refine",
+    request: { text: "ok. hope your interview goes fine.", action: "warm", count: 1 },
+    expect: { language: "en" },
+  },
+  // ---------------------------------------------------------------- reading a pasted conversation
+  {
+    id: "read-pasted",
+    tags: ["read"],
+    task: "analyze",
+    request: {
+      conversation: "Them: are you around this weekend?\nMe: maybe, why\nThem: there's a jazz thing on saturday\nThem: no pressure",
+    },
+    read: {
+      canReply: true,
+      lines: [
+        { text: "around this weekend", speaker: "them" },
+        { text: "maybe, why", speaker: "me" },
+        { text: "jazz thing", speaker: "them" },
+      ],
+      latestIncludes: "pressure",
+      problemIn: ["none"],
+    },
+  },
+  {
+    id: "read-unlabelled",
+    tags: ["read"],
+    task: "analyze",
+    request: { conversation: "haha you're ridiculous\nyou started it\nfair. dinner thursday then?" },
+    read: { canReply: true, latestIncludes: "thursday" },
+  },
+  // ---------------------------------------------------------------- reading screenshots
+  {
+    id: "read-screenshot-one",
+    tags: ["read", "screenshot"],
+    task: "analyze",
+    request: { conversation: "" },
+    images: ["chat-1"],
+    read: {
+      canReply: true,
+      lines: [
+        { text: "pineapple on pizza", speaker: "them" },
+        { text: "depends who's asking", speaker: "me" },
+        { text: "deciding whether we can be friends", speaker: "them" },
+        { text: "obviously yes", speaker: "me" },
+      ],
+      latestIncludes: "yes",
+      problemIn: ["none"],
+    },
+  },
+  {
+    id: "read-screenshot-two",
+    tags: ["read", "screenshot"],
+    task: "analyze",
+    request: { conversation: "" },
+    images: ["chat-1", "chat-2"],
+    read: {
+      canReply: true,
+      lines: [
+        { text: "pineapple on pizza", speaker: "them" },
+        { text: "still on for friday", speaker: "them" },
+        { text: "found someone better", speaker: "me" },
+        { text: "ramen place", speaker: "them" },
+      ],
+      latestIncludes: "ramen",
+      problemIn: ["none"],
+    },
+  },
+  {
+    id: "read-screenshot-blurred",
+    tags: ["read", "screenshot"],
+    task: "analyze",
+    request: { conversation: "" },
+    images: ["chat-blurred"],
+    read: { canReply: false, problemIn: ["unreadable", "partly_readable"] },
+  },
+  {
+    id: "read-screenshot-not-chat",
+    tags: ["read", "screenshot"],
+    task: "analyze",
+    request: { conversation: "" },
+    images: ["not-a-chat"],
+    read: { canReply: false, problemIn: ["not_a_conversation", "unreadable"] },
+  },
+  // ---------------------------------------------------------------- replies straight from a screenshot
+  {
+    id: "reply-from-screenshot",
+    tags: ["reply", "screenshot"],
+    task: "replies",
+    request: { conversation: "", intent: "natural" },
+    images: ["chat-2"],
+    expect: { language: "en" },
+  },
+  // ---------------------------------------------------------------- coach: questions
+  {
+    id: "coach-cancelled-plans",
+    tags: ["coach"],
+    task: "coach",
+    request: {
+      mode: "ask",
+      messages: [{ role: "user", text: "We've been on two dates and they've cancelled our third one twice, both times with a reason. Should I try again or let it go?" }],
+    },
+    coach: { forbidden: MIND_READING },
+  },
+  {
+    id: "coach-slow-replies",
+    tags: ["coach"],
+    task: "coach",
+    request: {
+      mode: "ask",
+      topic: "conversation",
+      messages: [{ role: "user", text: "They take a day to reply every time but the replies are long and thoughtful. I reply in minutes. Is that weird?" }],
+    },
+    coach: { forbidden: MIND_READING },
+  },
+  {
+    id: "coach-first-date-nerves",
+    tags: ["coach", "confidence"],
+    task: "coach",
+    request: {
+      mode: "ask",
+      topic: "confidence",
+      messages: [{ role: "user", text: "First date tomorrow and I always freeze when there's a silence. Any tips that aren't cheesy?" }],
+    },
+    coach: {},
+  },
+  // ---------------------------------------------------------------- coach: reviewing the user's own message
+  {
+    id: "coach-review-needy",
+    tags: ["coach", "review"],
+    task: "coach",
+    request: {
+      mode: "review",
+      draft: "Hey, sorry to bother you again, I know you're busy, I just wondered if you saw my last message? No worries if not!! Just checking haha",
+      goal: "check in without sounding needy",
+    },
+    coach: { review: true, forbidden: MIND_READING },
+  },
+  {
+    id: "coach-review-good",
+    tags: ["coach", "review"],
+    task: "coach",
+    request: { mode: "review", draft: "had a really good time last night. want to do it again next week?", goal: "ask for a second date" },
+    coach: { review: true },
+  },
+  // ---------------------------------------------------------------- coach: rehearsal
+  {
+    id: "coach-practice-opening",
+    tags: ["coach", "practice"],
+    task: "coach",
+    request: { mode: "practice", scenario: { id: "asking_out", detail: "" }, messages: [] },
+    coach: { practice: true },
+  },
+  {
+    id: "coach-practice-turn",
+    tags: ["coach", "practice"],
+    task: "coach",
+    request: {
+      mode: "practice",
+      scenario: { id: "keep_it_going", detail: "" },
+      messages: [
+        { role: "coach", text: "haha ok I'll admit it, I've watched that movie like 6 times" },
+        { role: "user", text: "6 times is a commitment. what keeps pulling you back?" },
+      ],
+    },
+    coach: { practice: true, partnerReply: true },
+  },
+  // ---------------------------------------------------------------- coach: deep (Pro, advanced route)
+  {
+    id: "coach-deep-mixed-signals",
+    tags: ["coach", "deep"],
+    task: "coach",
+    request: {
+      mode: "ask",
+      depth: "deep",
+      messages: [
+        {
+          role: "user",
+          text: "We've been talking for six weeks. Lots of late-night calls, they said they've never clicked like this, but they won't make concrete plans and they mentioned an ex twice this week. I don't want to push or to waste months. How do I bring it up?",
+        },
+      ],
+    },
+    coach: { forbidden: MIND_READING },
+  },
+  {
+    id: "coach-deep-long-distance",
+    tags: ["coach", "deep"],
+    task: "coach",
+    request: {
+      mode: "ask",
+      depth: "deep",
+      messages: [
+        {
+          role: "user",
+          text: "I met someone while travelling. We live 3 hours apart. We've had two great weekends. I want to say I'd like to see where it goes, but I'm scared it's too much too soon. How would you approach that conversation?",
+        },
+      ],
+    },
+    coach: { forbidden: MIND_READING },
   },
 ];

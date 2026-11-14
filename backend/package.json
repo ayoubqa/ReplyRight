@@ -11,7 +11,8 @@
     "test": "vitest run",
     "eval": "tsx --conditions=react-server evals/run.ts",
     "verify": "node scripts/verify.mjs",
-    "verify:live": "node scripts/verify.mjs --probe --require-live"
+    "verify:live": "node scripts/verify.mjs --probe --require-live",
+    "usage": "node scripts/usage-report.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

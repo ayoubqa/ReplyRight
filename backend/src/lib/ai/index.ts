@@ -1,6 +1,8 @@
 import "server-only";
 import { AnthropicProvider, type Effort } from "./anthropic-provider";
+import { anyAnthropicKeyConfigured, resolveAnthropicKey } from "./credentials";
 import { DemoProvider } from "./demo-provider";
+import { describeRoutes, resolveRoutes } from "./router";
 import { AI_TASKS, type AiProvider, type AiTask } from "./types";
 
 export type { AiProvider, AiTask } from "./types";
@@ -9,16 +11,19 @@ export { ProviderError } from "./types";
 /**
  * Model strategy
  * --------------
- * The model is chosen per task from environment variables so production can
- * trade naturalness, latency and cost without a code change:
+ * Models are chosen per route by the ModelRouter (`./router.ts`): Haiku,
+ * Sonnet or Opus depending on what was asked for. Every assignment can be
+ * changed from the environment without touching an endpoint:
  *
- *   AI_MODEL                  default for every task
- *   AI_MODEL_ANALYZE / _REPLIES / _REFINE / _COACH   per-task override
- *   AI_EFFORT                 low | medium | high for every task
- *   AI_EFFORT_ANALYZE / ...   per-task override
+ *   AI_ROUTE_<ROUTE>          one route, e.g. AI_ROUTE_REFINE="claude-sonnet-5-5"
+ *   AI_MODEL                  one model for every route (overrides the router's defaults)
+ *   AI_MODEL_ANALYZE / _REPLIES / _REFINE / _COACH   one model for every route of a task
+ *   AI_EFFORT, AI_EFFORT_<TASK>                      reasoning effort, as before
+ *   AI_ROUTING=off            the pre-routing setup: claude-opus-5-5 everywhere
  *
- * Pick production values with the eval harness in `backend/evals`
- * (`npm run eval`), which compares candidate models on the same cases.
+ * Check candidates with the eval harness in `backend/evals` (`npm run eval`).
+ * `resolveModels` and `resolveEfforts` below are the per-task view used by
+ * the eval harness and by AI_ROUTING=off.
  */
 export const DEFAULT_MODEL = "claude-opus-5-5";
 
@@ -60,27 +65,41 @@ export function resolveEfforts(): Record<AiTask, Effort> {
  * Resolves the configured provider (server only).
  *
  *   AI_PROVIDER = "anthropic" | "demo"  (optional; inferred from credentials)
- *   ANTHROPIC_API_KEY                   (required for "anthropic")
+ *   ANTHROPIC_API_KEY                   production key, used only in production
+ *   ANTHROPIC_API_KEY_DEV               development key, used everywhere else
+ *
+ * See `./credentials.ts`. Without a key this environment may use, the server
+ * runs in the labelled demo mode.
  */
 export function getProvider(): AiProvider {
   if (cached) return cached;
 
   const requested = env("AI_PROVIDER")?.toLowerCase();
-  const apiKey = env("ANTHROPIC_API_KEY");
-
-  if (requested === "demo" || (!requested && !apiKey)) {
+  if (requested === "demo") {
     cached = new DemoProvider();
-  } else if (requested === "anthropic" || !requested) {
-    if (!apiKey) {
-      console.warn("[replyright] AI_PROVIDER=anthropic but ANTHROPIC_API_KEY is missing. Falling back to demo mode.");
-      cached = new DemoProvider();
-    } else {
-      cached = new AnthropicProvider({ apiKey, models: resolveModels(), efforts: resolveEfforts() });
-    }
-  } else {
+    return cached;
+  }
+  if (requested && requested !== "anthropic") {
     console.warn(`[replyright] Unknown AI_PROVIDER "${requested}". Falling back to demo mode.`);
     cached = new DemoProvider();
+    return cached;
   }
+
+  const key = resolveAnthropicKey();
+  if (!key.ok) {
+    // Quiet when nothing is configured at all, as before. Loud when a key is
+    // present but this environment may not use it, or live AI was asked for.
+    if (requested === "anthropic" || anyAnthropicKeyConfigured()) {
+      console.warn(`[replyright] ${key.message} Running in demo mode.`);
+    }
+    cached = new DemoProvider();
+    return cached;
+  }
+  console.info(`[replyright] Live AI in ${key.environment} using ${key.source}.`);
+  const { routes, problems } = resolveRoutes();
+  for (const problem of problems) console.warn(`[replyright] ${problem.variable}: ${problem.message}`);
+  console.info(`[replyright] AI routes: ${describeRoutes(routes)}`);
+  cached = new AnthropicProvider({ apiKey: key.apiKey, routes, environment: key.environment });
   return cached;
 }
 

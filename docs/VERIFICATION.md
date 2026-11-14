@@ -52,13 +52,15 @@ Result             : 21 of 21 checks passed
 
 ## 2. Switch on live AI
 
-Put the key in `backend/.env.local` and restart the server:
+Put a **development** key in `backend/.env.local` and restart the server:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY_DEV=sk-ant-...
 ```
 
-The key lives only in this file on the server. It is never put in the app, in the Xcode project or in this repository.
+A development server uses only `ANTHROPIC_API_KEY_DEV`. It never reads `ANTHROPIC_API_KEY`, which is the production key: with only that one set, the server stays in demo mode and its log says why. The server log names the variable it used (`Live AI in development using ANTHROPIC_API_KEY_DEV.`), never the key. Keys live only in this file on the server. They are never put in the app, in the Xcode project or in this repository.
+
+Development spend is capped at $5 a day by default (`RR_DEV_SPEND_LIMIT_USD`, `RR_DEV_SPEND_PERIOD`). The server log warns at 50, 75 and 90%, and at 100% the server stops sending AI requests until the period resets. `npm run verify` prints how much of the limit is used. Set a monthly limit on the development key in the Anthropic Console as well: the server's figure is an estimate from token counts.
 
 ## 3. Prove the AI answers
 
@@ -73,7 +75,8 @@ This runs the same checks, adds one small real AI call through the probe route, 
 
 | Reason | What it means | What to do |
 | --- | --- | --- |
-| `credentials` | The key was rejected, or may not use this model | Check `ANTHROPIC_API_KEY` |
+| `credentials` | The key was rejected, or may not use this model | Check `ANTHROPIC_API_KEY_DEV` (development) or `ANTHROPIC_API_KEY` (production) |
+| `budget` | Development only: the spend limit is reached, so nothing was sent | Wait for the reset time in the message, or raise `RR_DEV_SPEND_LIMIT_USD` |
 | `billing` | The account has no credit | Add credit in the Anthropic console |
 | `model` | The model name is not available to this key | Check `AI_MODEL` (default `claude-opus-5-5`) |
 | `request` | The provider rejected the request itself (returned as `500 internal`) | Read the server terminal: in development it prints the provider's message |
@@ -81,7 +84,7 @@ This runs the same checks, adds one small real AI call through the probe route, 
 | `overloaded` / `timeout` | The provider is busy | Try again |
 | `network` | The server cannot reach the provider | Check the server's internet access |
 
-The server terminal has one line per request: `[replyright] task=replies status=200 ms=4180 mode=live ... req=<id>`. It never contains a message, a draft or a screenshot.
+The server terminal has one line per request: `[replyright] task=replies status=200 ms=4180 mode=live ... req=<id>`, and one usage line per AI call: `[replyright] ai_usage {"feature":"replies","model":"claude-opus-5-5","inputTokens":2963,"outputTokens":1512,"estimatedCostUsd":0.042092,...}`. Neither contains a message, a draft, a screenshot or a key. Outside production the usage lines are also kept in `backend/.usage/`; `npm run usage` totals them by day, feature and model.
 
 **This step has not been run by the author.** No API key was available where this was written. The request the server sends was checked against the SDK's types and documentation, and the server recovers by itself if the optional refusal-fallback parameter is not accepted, but only this step proves it against the real service. If it fails with `reason: request`, the provider's message in the server terminal says which parameter to change in `backend/src/lib/ai/anthropic-provider.ts`.
 
@@ -122,8 +125,8 @@ Running the script twice within a minute can trip the per-address rate limit (`R
 ## 6. Automated tests
 
 ```bash
-cd backend && npm test                              # 109 server tests, no network
-cd ios/Packages/ReplyRightKit && swift test         # 120 unit tests, on a Mac
+cd backend && npm test                              # 214 server tests, no network
+cd ios/Packages/ReplyRightKit && swift test         # 121 unit tests, on a Mac
 ```
 
 In Xcode, Product, Test also runs the 6 UI tests. The ones that ask for an answer need the server running; demo mode is enough.
@@ -141,7 +144,11 @@ python3 ios/scripts/check_xcodeproj.py           # project file structure
 
 | | State |
 | --- | --- |
-| Server: type check, lint, production build, 109 tests | Verified where this was written |
+| Server: type check, lint, production build, 214 tests | Verified where this was written |
+| Server: model routing (route choice, configuration, thinking per model, Haiku-to-Sonnet refusal fallback, spend limit across models) | Verified where this was written, with the real SDK against a fake HTTP API (`tests/routing.test.ts`). Step-by-step checks on a Mac: `docs/COST-CONTROLS.md` |
+| Model quality per route (Haiku, Sonnet, Opus) | **Not run yet.** The eval harness is ready (`npm run eval`); see `docs/COST-CONTROLS.md` |
+| Server: key isolation, usage ledger, development spend limit, retries, cancellation and duplicate joining | Verified where this was written, with the real SDK against a fake HTTP API (`tests/provider-calls.test.ts`, `tests/pipeline-calls.test.ts`, `tests/spend.test.ts`, `tests/credentials.test.ts`). Not yet run against the real API with a development key |
+| App: no automatic retry after `X-RR-Retry: no` | Written without Xcode; unit test added (`testNoAutomaticRetryWhenTheServerSaysARepeatCouldCostAnotherAICall`). Needs a build and `swift test` on a Mac |
 | Server: every request shape the app sends, over HTTP, in demo mode (`npm run verify`, 21 checks) | Verified where this was written |
 | Server: screenshot decoding, normalisation and refusal of damaged, unsupported, tiny and oversized images | Verified where this was written (unit and route tests, and `verify` against both `next dev` and a production build) |
 | Server: live AI calls | **Not verified.** No key was available. Do step 3 |
